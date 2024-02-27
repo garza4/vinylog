@@ -2,6 +2,7 @@ package com.example.vinylog.objects;
 
 
 public class Album {
+    String collectionName;
     String albumName;
     String artistName;
     String songsOnRecord;
@@ -18,6 +19,14 @@ public class Album {
 
     public String getYearPublished() {
         return yearPublished;
+    }
+
+    public String getCollectionName() {
+        return collectionName;
+    }
+
+    public void setCollectionName(String collectionName) {
+        this.collectionName = collectionName;
     }
 
     public void setYearPublished(String yearPublished) {
