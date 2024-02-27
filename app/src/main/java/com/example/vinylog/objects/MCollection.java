@@ -1,8 +1,13 @@
 package com.example.vinylog.objects;
 
+import android.os.Parcel;
+import android.os.Parcelable;
+
+import androidx.annotation.NonNull;
+
 import java.util.List;
 
-public class MCollection {
+public class MCollection implements Parcelable {
     String collectionName;
     List<Album> albums;
 
@@ -25,5 +30,15 @@ public class MCollection {
 
     public void setAlbums(List<Album> albums) {
         this.albums = albums;
+    }
+
+    @Override
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override
+    public void writeToParcel(@NonNull Parcel parcel, int i) {
+
     }
 }

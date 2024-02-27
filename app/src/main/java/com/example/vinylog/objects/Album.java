@@ -1,7 +1,12 @@
 package com.example.vinylog.objects;
 
 
-public class Album {
+import android.os.Parcel;
+import android.os.Parcelable;
+
+import androidx.annotation.NonNull;
+
+public class Album implements Parcelable {
     String collectionName;
     String albumName;
     String artistName;
@@ -67,5 +72,15 @@ public class Album {
     @Override
     public String toString(){
         return albumName + ", " + artistName + ", ";
+    }
+
+    @Override
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override
+    public void writeToParcel(@NonNull Parcel parcel, int i) {
+
     }
 }
