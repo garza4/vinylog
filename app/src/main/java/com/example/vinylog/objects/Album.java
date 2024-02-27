@@ -22,6 +22,27 @@ public class Album implements Parcelable {
         this.genre = genre;
     }
 
+    protected Album(Parcel in) {
+        collectionName = in.readString();
+        albumName = in.readString();
+        artistName = in.readString();
+        songsOnRecord = in.readString();
+        yearPublished = in.readString();
+        genre = in.readString();
+    }
+
+    public static final Creator<Album> CREATOR = new Creator<Album>() {
+        @Override
+        public Album createFromParcel(Parcel in) {
+            return new Album(in);
+        }
+
+        @Override
+        public Album[] newArray(int size) {
+            return new Album[size];
+        }
+    };
+
     public String getYearPublished() {
         return yearPublished;
     }
@@ -81,6 +102,11 @@ public class Album implements Parcelable {
 
     @Override
     public void writeToParcel(@NonNull Parcel parcel, int i) {
-
+        parcel.writeString(collectionName);
+        parcel.writeString(albumName);
+        parcel.writeString(artistName);
+        parcel.writeString(songsOnRecord);
+        parcel.writeString(yearPublished);
+        parcel.writeString(genre);
     }
 }

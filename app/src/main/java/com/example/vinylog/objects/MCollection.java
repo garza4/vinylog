@@ -16,6 +16,23 @@ public class MCollection implements Parcelable {
         this.albums = albums;
     }
 
+    protected MCollection(Parcel in) {
+        collectionName = in.readString();
+        albums = in.createTypedArrayList(Album.CREATOR);
+    }
+
+    public static final Creator<MCollection> CREATOR = new Creator<MCollection>() {
+        @Override
+        public MCollection createFromParcel(Parcel in) {
+            return new MCollection(in);
+        }
+
+        @Override
+        public MCollection[] newArray(int size) {
+            return new MCollection[size];
+        }
+    };
+
     public String getCollectionName() {
         return collectionName;
     }
@@ -39,6 +56,7 @@ public class MCollection implements Parcelable {
 
     @Override
     public void writeToParcel(@NonNull Parcel parcel, int i) {
-
+        parcel.writeString(collectionName);
+        parcel.writeTypedList(albums);
     }
 }
