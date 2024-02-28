@@ -11,15 +11,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
+import androidx.room.Room
 import com.example.vinylog.activities.AlbumView
 import com.example.vinylog.objects.Album
 import com.example.vinylog.objects.MCollection
 import com.example.vinylog.objects.MusicCollection
+import com.example.vinylog.objects.database.AppDb
 import com.example.vinylog.ui.theme.VinyLogTheme
 import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        val db = Room.databaseBuilder(
+            applicationContext,
+            AppDb::class.java, "library"
+        ).build()
         super.onCreate(savedInstanceState)
         if(!File(filesDir, "lib").exists()){
             openFileOutput("lib", MODE_PRIVATE).use {
@@ -27,6 +33,7 @@ class MainActivity : ComponentActivity() {
             }
         }else{
             println("file exists")
+            createLibStructure(db)
         }
         setContent {
             VinyLogTheme {
@@ -53,6 +60,10 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
+
+fun createLibStructure(db: AppDb){
+//    db.libraryDao().all
 }
 
 val ALBUM_LIST = MusicCollection(

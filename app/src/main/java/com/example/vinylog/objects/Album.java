@@ -3,14 +3,25 @@ package com.example.vinylog.objects;
 
 import android.os.Parcel;
 
+import androidx.annotation.NonNull;
+import androidx.room.ColumnInfo;
+import androidx.room.Entity;
+import androidx.room.PrimaryKey;
+
 import java.io.Serializable;
 
+@Entity
 public class Album implements Serializable {
-    String collectionName;
+    @PrimaryKey
+    @NonNull
     String albumName;
+    @ColumnInfo(name="artist")
     String artistName;
+    @ColumnInfo(name="songs")
     String songsOnRecord;
+    @ColumnInfo(name="year")
     String yearPublished;
+    @ColumnInfo(name="genre")
     String genre;
 
     public Album(String albumName, String artistName, String songsOnRecord, String yearPublished, String genre) {
@@ -21,25 +32,8 @@ public class Album implements Serializable {
         this.genre = genre;
     }
 
-    protected Album(Parcel in) {
-        collectionName = in.readString();
-        albumName = in.readString();
-        artistName = in.readString();
-        songsOnRecord = in.readString();
-        yearPublished = in.readString();
-        genre = in.readString();
-    }
-
     public String getYearPublished() {
         return yearPublished;
-    }
-
-    public String getCollectionName() {
-        return collectionName;
-    }
-
-    public void setCollectionName(String collectionName) {
-        this.collectionName = collectionName;
     }
 
     public void setYearPublished(String yearPublished) {
