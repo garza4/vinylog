@@ -70,21 +70,21 @@ val ALBUM_LIST = MusicCollection(
     listOf(
         listOf(
             MCollection("Vinyl",listOf(
-                Album("A","","","",""),
-                Album("B","","","",""),
-                Album("C","","","",""))
+                Album("A","","","","","Vinyl"),
+                Album("B","","","","","Vinyl"),
+                Album("C","","","","","Vinyl"))
 
             ),
             MCollection("CDs",listOf(
-                Album("D","","","",""),
-                Album("E","","","",""),
-                Album("F","","","",""))
+                Album("D","","","","","CD"),
+                Album("E","","","","","CD"),
+                Album("F","","","","","CD"))
 
             ),
             MCollection("Movies",listOf(
-                Album("G","","","",""),
-                Album("H","","","",""),
-                Album("I","","","",""))
+                Album("G","","","","","DVD"),
+                Album("H","","","","","DVD"),
+                Album("I","","","","","DVD"))
 
             ))
     )

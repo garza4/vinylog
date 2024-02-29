@@ -10,7 +10,7 @@ import androidx.room.PrimaryKey;
 
 import java.io.Serializable;
 
-@Entity
+@Entity(tableName = "albums")
 public class Album implements Serializable {
     @PrimaryKey
     @NonNull
@@ -24,12 +24,24 @@ public class Album implements Serializable {
     @ColumnInfo(name="genre")
     String genre;
 
-    public Album(String albumName, String artistName, String songsOnRecord, String yearPublished, String genre) {
+    @ColumnInfo(name="media_type")
+    String mediaType;
+
+    public Album(String albumName, String artistName, String songsOnRecord, String yearPublished, String genre,String mediaType) {
         this.albumName = albumName;
         this.artistName = artistName;
         this.songsOnRecord = songsOnRecord;
         this.yearPublished = yearPublished;
         this.genre = genre;
+        this.mediaType = mediaType;
+    }
+
+    public String getMediaType() {
+        return mediaType;
+    }
+
+    public void setMediaType(String mediaType) {
+        this.mediaType = mediaType;
     }
 
     public String getYearPublished() {
