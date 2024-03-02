@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
                                     val intent = Intent(this@MainActivity,AlbumView::class.java)
                                     with(intent){
                                         putExtra("group",group)
+                                        putExtra("mt",group.collectionName)
                                     }
                                     startActivity(intent)
 
