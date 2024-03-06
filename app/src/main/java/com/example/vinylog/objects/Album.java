@@ -27,13 +27,22 @@ public class Album implements Serializable {
     @ColumnInfo(name="media_type")
     String mediaType;
 
-    public Album(String albumName, String artistName, String songsOnRecord, String yearPublished, String genre,String mediaType) {
+    public Album(@NonNull String albumName, String artistName, String songsOnRecord, String yearPublished, String genre, String mediaType) {
         this.albumName = albumName;
         this.artistName = artistName;
         this.songsOnRecord = songsOnRecord;
         this.yearPublished = yearPublished;
         this.genre = genre;
         this.mediaType = mediaType;
+    }
+
+    public Album(){
+        this.albumName = "";
+        this.artistName = "";
+        this.songsOnRecord = "";
+        this.yearPublished = "";
+        this.genre = "";
+        this.mediaType = "";
     }
 
     public String getMediaType() {

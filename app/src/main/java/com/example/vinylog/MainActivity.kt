@@ -64,7 +64,8 @@ class MainActivity : ComponentActivity() {
 }
 
 fun createLibStructure(db: AppDb){
-//    db.libraryDao().all
+    val media = db.libraryDao().all
+    println(media);
 }
 
 val ALBUM_LIST = MusicCollection(
