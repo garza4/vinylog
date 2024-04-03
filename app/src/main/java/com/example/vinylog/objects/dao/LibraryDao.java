@@ -17,6 +17,9 @@ public interface LibraryDao {
     @Query("SELECT * FROM albums WHERE artist IN (:artist)")
     List<Album> loadAllByArtist(String artist);
 
+    @Query("SELECT media_type FROM albums")
+    List<String> getByMedia();
+
     @Insert
     void insertAll(Album... albums);
 

@@ -3,43 +3,30 @@ package com.example.vinylog.activities
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.BottomAppBar
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,11 +34,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.room.Room
 import com.example.vinylog.objects.Album
 import com.example.vinylog.objects.MCollection
@@ -66,7 +50,7 @@ class AlbumView : ComponentActivity(){
         val db = Room.databaseBuilder(
             applicationContext,
             AppDb::class.java, "library"
-        ).build()
+        ).allowMainThreadQueries().build()
         setContent {
             VinyLogTheme {
                 var showDialog by remember { mutableStateOf(false) }
@@ -89,7 +73,7 @@ class AlbumView : ComponentActivity(){
                             val myObj = bundle?.getSerializable("group") as? MCollection
                             if(showDialog){
                                 if (mediaType != null) {
-                                    DialogExamples(mediaType,onDismiss = { showDialog = false },db)
+                                    MediaSaveDialog(mediaType,onDismiss = { showDialog = false },db)
                                 }
                             }
 
@@ -110,7 +94,7 @@ class AlbumView : ComponentActivity(){
     }
 
     @Composable
-    fun DialogExamples(mediaType:String,onDismiss:()->Unit ,db: AppDb) {
+    fun MediaSaveDialog(mediaType:String, onDismiss:()->Unit, db: AppDb) {
         var choice by remember { mutableStateOf("") }
         var fieldEntries by remember { mutableStateOf(mapOf("artist" to "","album" to "","artist" to "","songs" to "", "year" to "", "genre" to "", "media" to "")) }
         if(choice.isEmpty()){
@@ -153,7 +137,7 @@ class AlbumView : ComponentActivity(){
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(375.dp)
+                        .height(500.dp)
                         .padding(16.dp),
                     shape = RoundedCornerShape(16.dp),
                 ) {
@@ -164,7 +148,6 @@ class AlbumView : ComponentActivity(){
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ){
                         fieldEntries.keys.forEach { entry ->
-                            Column {
                                 TextField(
                                     value = fieldEntries[entry]!!,
                                     onValueChange = { fieldEntries += entry to it },
@@ -172,12 +155,14 @@ class AlbumView : ComponentActivity(){
                                         Text(entry)
                                     }
                                 )
-                            }
                         }
-                        Row(modifier = Modifier.fillMaxWidth(),
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth(),
                             horizontalArrangement = Arrangement.Center,
                         ){
                             TextButton(
+                                modifier = Modifier.padding(8.dp),
                                 onClick = {
                                     val newAlbum  = Album();
                                     newAlbum.albumName = fieldEntries["album"]
@@ -185,16 +170,18 @@ class AlbumView : ComponentActivity(){
                                     newAlbum.yearPublished = fieldEntries["year"]
                                     newAlbum.genre = fieldEntries["genre"]
                                     newAlbum.mediaType = fieldEntries["media"]
+                                    println(newAlbum)
                                     db.libraryDao().insertAll(newAlbum)
-
-                                }
+                                    onDismiss()
+                                },
                             ) {
                                 Text("Save")
                             }
                             TextButton(
+                                modifier = Modifier.padding(8.dp),
                                 onClick = {
                                     onDismiss()
-                                }
+                                },
                             ) {
                                 Text("Cancel")
                             }

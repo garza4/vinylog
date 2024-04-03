@@ -1,7 +1,9 @@
 package com.example.vinylog
 
+import android.content.ContentValues.TAG
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
@@ -25,7 +27,7 @@ class MainActivity : ComponentActivity() {
         val db = Room.databaseBuilder(
             applicationContext,
             AppDb::class.java, "library"
-        ).build()
+        ).allowMainThreadQueries().build()
         super.onCreate(savedInstanceState)
         if(!File(filesDir, "lib").exists()){
             openFileOutput("lib", MODE_PRIVATE).use {
@@ -41,7 +43,13 @@ class MainActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     Column {
                         //TODO pass as parcel to second activity
-                        ALBUM_LIST.collect.forEach{collection ->
+                        val media = db.libraryDao().byMedia
+                        val albums = db.libraryDao().all
+
+                        val colls = createCollections(albums,media)
+                        println("collection size " + albums.size)
+
+                        colls.collect.forEach{collection ->
                             collection.forEach{group ->
                                 Button(onClick = {
                                     val intent = Intent(this@MainActivity,AlbumView::class.java)
@@ -66,6 +74,21 @@ class MainActivity : ComponentActivity() {
 fun createLibStructure(db: AppDb){
     val media = db.libraryDao().all
     println(media);
+}
+
+fun createCollections(albums:List<Album>, mediaTypes:List<String>):MusicCollection{
+    //need a collection for each kind of collection
+    val medias = mutableListOf<MCollection>()
+    mediaTypes.forEach{media ->
+        run {
+            medias.add(MCollection(media, albums.filter { al -> al.mediaType == media }))
+        }
+    }
+    return MusicCollection(
+        listOf(
+            medias
+        )
+    )
 }
 
 val ALBUM_LIST = MusicCollection(
