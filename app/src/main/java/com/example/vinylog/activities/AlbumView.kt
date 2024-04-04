@@ -1,8 +1,14 @@
 package com.example.vinylog.activities
 
+import android.content.ContentValues.TAG
+import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
 import androidx.room.Room
 import com.example.vinylog.objects.Album
 import com.example.vinylog.objects.MCollection
@@ -47,6 +54,7 @@ import com.google.mlkit.vision.barcode.common.Barcode
 class AlbumView : ComponentActivity(){
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        var mediaType: String? = null
         val db = Room.databaseBuilder(
             applicationContext,
             AppDb::class.java, "library"
@@ -69,11 +77,11 @@ class AlbumView : ComponentActivity(){
                             verticalArrangement = Arrangement.spacedBy(16.dp),
                         ) {
                             val bundle = intent.extras
-                            val mediaType = bundle?.getString("mt")
+                            mediaType = bundle?.getString("mt")
                             val myObj = bundle?.getSerializable("group") as? MCollection
                             if(showDialog){
                                 if (mediaType != null) {
-                                    MediaSaveDialog(mediaType,onDismiss = { showDialog = false },db)
+                                    MediaSaveDialog(mediaType!!,onDismiss = { showDialog = false },db)
                                 }
                             }
 
@@ -96,7 +104,7 @@ class AlbumView : ComponentActivity(){
     @Composable
     fun MediaSaveDialog(mediaType:String, onDismiss:()->Unit, db: AppDb) {
         var choice by remember { mutableStateOf("") }
-        var fieldEntries by remember { mutableStateOf(mapOf("artist" to "","album" to "","artist" to "","songs" to "", "year" to "", "genre" to "", "media" to "")) }
+        var fieldEntries by remember { mutableStateOf(mapOf("artist" to "","album" to "","artist" to "","songs" to "", "year" to "", "genre" to "", "media" to mediaType)) }
         if(choice.isEmpty()){
             AlertDialog(
                 title = {
@@ -215,11 +223,7 @@ class AlbumView : ComponentActivity(){
                     TextButton(
                         onClick = {
                             choice="scan"
-                            val options = BarcodeScannerOptions.Builder()
-                                .setBarcodeFormats(
-                                    Barcode.FORMAT_QR_CODE,
-                                    Barcode.FORMAT_AZTEC)
-                                .build()
+                            startCamera()
 
                         }
                     ) {
@@ -228,6 +232,33 @@ class AlbumView : ComponentActivity(){
                 }
             )
         }
+    }
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
+        cameraProviderFuture.addListener({
+            // Used to bind the lifecycle of cameras to the lifecycle owner
+            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+
+            // Preview
+            val preview = Preview.Builder()
+                .build()
+
+            // Select back camera as a default
+            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            try {
+                // Unbind use cases before rebinding
+                cameraProvider.unbindAll()
+
+                // Bind use cases to camera
+                cameraProvider.bindToLifecycle(
+                    this, cameraSelector, preview)
+
+            } catch(exc: Exception) {
+                Log.e(TAG, "Use case binding failed", exc)
+            }
+
+        }, ContextCompat.getMainExecutor(this))
     }
 }

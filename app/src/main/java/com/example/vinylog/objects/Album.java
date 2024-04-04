@@ -94,6 +94,6 @@ public class Album implements Serializable {
     }
     @Override
     public String toString(){
-        return albumName + ", " + artistName + ", ";
+        return "album: " + albumName + ", artist:" + artistName + ", genre: " + genre;
     }
 }
