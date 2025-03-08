@@ -1,4 +1,10 @@
 package com.example.vinylog.dialogs
+import android.content.ContentValues.TAG
+import android.content.Context
+import android.util.Log
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,8 +29,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
 import com.example.vinylog.objects.database.AppDb
 import com.example.vinylog.objects.Album
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
@@ -113,6 +122,7 @@ fun MediaSaveDialog(mediaType: String, onDismiss: () -> Unit, db: AppDb) {
                                 newAlbum.mediaType = fieldEntries["media"]
                                 println(newAlbum)
                                 db.libraryDao().insertAll(newAlbum)
+                                db.libraryDao().all
                                 onDismiss()
                             },
                         ) {
@@ -154,8 +164,10 @@ fun MediaSaveDialog(mediaType: String, onDismiss: () -> Unit, db: AppDb) {
             },
             dismissButton = {
                 TextButton(
-                    interactionSource = remember { MutableInteractionSource() },                    onClick = {
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = {
                         choice = "scan"
+//                        startCamera(LocalContext.current)
                     }
                 ) {
                     Text("Scan",onTextLayout = {})
@@ -163,4 +175,33 @@ fun MediaSaveDialog(mediaType: String, onDismiss: () -> Unit, db: AppDb) {
             }
         )
     }
+}
+
+fun startCamera(context: Context) {
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+
+    cameraProviderFuture.addListener({
+        // Used to bind the lifecycle of cameras to the lifecycle owner
+        val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+
+        // Preview
+        val preview = Preview.Builder()
+            .build()
+
+        // Select back camera as a default
+        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+        try {
+            // Unbind use cases before rebinding
+            cameraProvider.unbindAll()
+
+            // Bind use cases to camera
+            cameraProvider.bindToLifecycle(
+                context as LifecycleOwner, cameraSelector, preview)
+
+        } catch(exc: Exception) {
+            Log.e(TAG, "Use case binding failed", exc)
+        }
+
+    }, ContextCompat.getMainExecutor(context))
 }

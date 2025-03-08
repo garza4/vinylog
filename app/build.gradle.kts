@@ -49,6 +49,7 @@ android {
 dependencies {
     implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.0")
     implementation("androidx.camera:camera-core:1.3.1")
+    implementation("androidx.compose.runtime:runtime-livedata:1.7.8")
     val room_version = "2.6.1"
     implementation("androidx.room:room-runtime:$room_version")
     annotationProcessor("androidx.room:room-compiler:$room_version")

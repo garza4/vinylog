@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.LiveData
 import androidx.room.Room
 import com.example.vinylog.activities.AlbumView
 import com.example.vinylog.dialogs.MediaSaveDialog
@@ -62,7 +63,7 @@ class MainActivity : ComponentActivity() {
                         val albums = db.libraryDao().all
 
                         val colls = createCollections(albums,media)
-                        println("collection size " + albums.size)
+                        println("collection size " + albums.value?.size)
 
                         Card(
                             modifier = Modifier
@@ -78,7 +79,7 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 Text(
                                     text = "Select Media Type",
-                                    style = MaterialTheme.typography.headlineSmall,
+                                    style = MaterialTheme.typography.headlineLarge,
                                     modifier = Modifier.padding(bottom = 8.dp)
                                 )
                                 Divider()
@@ -94,9 +95,11 @@ class MainActivity : ComponentActivity() {
                                         startActivity(intent)
                                     },
                                     interactionSource = remember { MutableInteractionSource() }
+
                                 ) {
                                     Text(text = "Vinyl", onTextLayout = {})
                                 }
+                                Divider()
                                 TextButton(
                                     onClick = {
                                         val intent = Intent(this@MainActivity, AlbumView::class.java)
@@ -111,6 +114,7 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Text(text = "CDs", onTextLayout = {})
                                 }
+                                Divider()
                                 TextButton(
                                     onClick = {
                                         val intent = Intent(this@MainActivity, AlbumView::class.java)
@@ -146,13 +150,12 @@ fun createLibStructure(db: AppDb){
     println(media);
 }
 
-fun createCollections(albums:List<Album>, mediaTypes:List<String>):MusicCollection{
+fun createCollections(albums:LiveData<List<Album>>, mediaTypes:LiveData<List<String>>):MusicCollection{
     //need a collection for each kind of collection
     val medias = mutableListOf<MCollection>()
-    mediaTypes.forEach{media ->
+    mediaTypes.value?.forEach{media : String ->
         run {
-            medias.add(MCollection(media, albums.filter { al -> al.mediaType == media }))
-        }
+            medias.add(MCollection(media, albums.value?.filter { al -> al.mediaType == media } ?: emptyList()))        }
     }
     return MusicCollection(
         listOf(
