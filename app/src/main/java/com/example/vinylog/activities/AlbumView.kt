@@ -1,7 +1,6 @@
 package com.example.vinylog.activities
 
 import android.content.ContentValues.TAG
-import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -9,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -66,7 +66,7 @@ class AlbumView : ComponentActivity(){
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     Scaffold(
                         floatingActionButton = {
-                            FloatingActionButton(onClick = { showDialog = true }) {
+                            FloatingActionButton(onClick = { showDialog = true },interactionSource = remember { MutableInteractionSource() }) {
                                 Icon(Icons.Default.Add, contentDescription = "Add")
                             }
                         }
@@ -90,7 +90,7 @@ class AlbumView : ComponentActivity(){
                                     item(span = {
                                         GridItemSpan(maxLineSpan)
                                     }){
-                                        Text(text = album.toString())
+                                        Text(text = album.toString(),onTextLayout = {})
                                     }
                                 }
                             }
@@ -108,24 +108,26 @@ class AlbumView : ComponentActivity(){
         if(choice.isEmpty()){
             AlertDialog(
                 title = {
-                    Text(text = "Media Saver")
+                    Text(text = "Media Saver",onTextLayout = { })
                 },
                 text = {
-                    Text(text = "Make a selection on whether to scan and save new media or use manual entry")
+                    Text(text = "Make a selection on whether to scan and save new media or use manual entry",onTextLayout = {  })
                 },
                 icon = { Icon(Icons.Rounded.Star, contentDescription = "Localized description") },
                 onDismissRequest = onDismiss,
                 confirmButton = {
                     TextButton(
+                        interactionSource = remember { MutableInteractionSource() },
                         onClick = {
                             choice="manual"
                         }
                     ) {
-                        Text("Enter Manual")
+                        Text("Enter Manual",onTextLayout = {})
                     }
                 },
                 dismissButton = {
                     TextButton(
+                        interactionSource = remember { MutableInteractionSource() },
                         onClick = {
                             choice="scan"
                             val options = BarcodeScannerOptions.Builder()
@@ -136,7 +138,7 @@ class AlbumView : ComponentActivity(){
 
                         }
                     ) {
-                        Text("Scan")
+                        Text("Scan",onTextLayout = {})
                     }
                 }
             )
@@ -157,10 +159,10 @@ class AlbumView : ComponentActivity(){
                     ){
                         fieldEntries.keys.forEach { entry ->
                                 TextField(
-                                    value = fieldEntries[entry]!!,
+                                    interactionSource = remember { MutableInteractionSource() },                                    value = fieldEntries[entry]!!,
                                     onValueChange = { fieldEntries += entry to it },
                                     label = {
-                                        Text(entry)
+                                        Text(entry,onTextLayout = {})
                                     }
                                 )
                         }
@@ -170,6 +172,7 @@ class AlbumView : ComponentActivity(){
                             horizontalArrangement = Arrangement.Center,
                         ){
                             TextButton(
+                                interactionSource = remember { MutableInteractionSource() },
                                 modifier = Modifier.padding(8.dp),
                                 onClick = {
                                     val newAlbum  = Album();
@@ -183,15 +186,16 @@ class AlbumView : ComponentActivity(){
                                     onDismiss()
                                 },
                             ) {
-                                Text("Save")
+                                Text("Save",onTextLayout = {})
                             }
                             TextButton(
+                                interactionSource = remember { MutableInteractionSource() },
                                 modifier = Modifier.padding(8.dp),
                                 onClick = {
                                     onDismiss()
                                 },
                             ) {
-                                Text("Cancel")
+                                Text("Cancel",onTextLayout = {})
                             }
 
                         }
@@ -202,32 +206,33 @@ class AlbumView : ComponentActivity(){
         }else{
             AlertDialog(
                 title = {
-                    Text(text = "Media Saver")
+                    Text(text = "Media Saver",onTextLayout = { })
                 },
                 text = {
-                    Text(text = "Make a selection on whether to scan and save new media or use manual entry")
+                    Text(text = "Make a selection on whether to scan and save new media or use manual entry",onTextLayout = {})
                 },
                 icon = { Icon(Icons.Rounded.Star, contentDescription = "Localized description") },
                 onDismissRequest = onDismiss,
                 confirmButton = {
                     TextButton(
-                        onClick = {
+                        interactionSource = remember { MutableInteractionSource() },                        onClick = {
                             choice="manual"
                             onDismiss()
                         }
                     ) {
-                        Text("Enter Manual")
+                        Text("Enter Manual",onTextLayout = {  })
                     }
                 },
                 dismissButton = {
                     TextButton(
+                        interactionSource = remember { MutableInteractionSource() },
                         onClick = {
                             choice="scan"
                             startCamera()
 
                         }
                     ) {
-                        Text("Scan")
+                        Text("Scan",onTextLayout = { })
                     }
                 }
             )
