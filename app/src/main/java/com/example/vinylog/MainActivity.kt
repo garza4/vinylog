@@ -131,13 +131,13 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
-                        Button(onClick = { showDialog = true }, interactionSource = remember { MutableInteractionSource() }) {
-                            Text("Add Media",onTextLayout = {})
-                        }
+//                        Button(onClick = { showDialog = true }, interactionSource = remember { MutableInteractionSource() }) {
+//                            Text("Add Media",onTextLayout = {})
+//                        }
 
-                        if(showDialog){
-                            MediaSaveDialog(mediaType = "example", onDismiss = {showDialog = false}, db = db)
-                        }
+//                        if(showDialog){
+//                            MediaSaveDialog(mediaType = "example", onDismiss = {showDialog = false}, db = db)
+//                        }
                     }
                 }
             }

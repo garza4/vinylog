@@ -34,6 +34,7 @@ android {
         jvmTarget = "1.8"
     }
     buildFeatures {
+        viewBinding = true
         compose = true
     }
     composeOptions {
@@ -47,6 +48,12 @@ android {
 }
 
 dependencies {
+    // ZXing library for barcode scanning
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
+    // Retrofit for API calls
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
     implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.0")
     implementation("androidx.camera:camera-core:1.3.1")
     implementation("androidx.compose.runtime:runtime-livedata:1.7.8")

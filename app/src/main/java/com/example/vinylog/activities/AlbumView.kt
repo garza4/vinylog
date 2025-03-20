@@ -38,6 +38,8 @@ import com.example.vinylog.objects.database.DatabaseSingleton
 import com.example.vinylog.ui.theme.VinyLogTheme
 
 class AlbumView : ComponentActivity() {
+    private lateinit var barcodeScanner: com.example.vinylog.util.BarcodeScanner
+
     private val albumViewModel: AlbumViewModel by lazy {
         val bundle = intent.extras
         ViewModelProvider(this, AlbumViewModelFactory(application,bundle?.getString("mt"))).get(AlbumViewModel::class.java)
@@ -47,6 +49,8 @@ class AlbumView : ComponentActivity() {
         super.onCreate(savedInstanceState)
         var mediaType: String? = null
         val db = DatabaseSingleton.getDatabase(applicationContext)
+        barcodeScanner = com.example.vinylog.util.BarcodeScanner(this)
+
         setContent {
             VinyLogTheme {
                 var showDialog by remember { mutableStateOf(false) }
@@ -70,7 +74,7 @@ class AlbumView : ComponentActivity() {
                             val myObj = bundle?.getSerializable("group") as? MCollection
                             if (showDialog) {
                                 if (mediaType != null) {
-                                    MediaSaveDialog(mediaType!!, onDismiss = { showDialog = false }, db)
+                                    MediaSaveDialog(mediaType!!, onDismiss = { showDialog = false }, db,barcodeScanner=barcodeScanner)
                                 }
                             }
                             val albums by albumViewModel.albums.observeAsState(emptyList())
