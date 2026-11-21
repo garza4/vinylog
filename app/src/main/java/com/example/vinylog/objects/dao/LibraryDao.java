@@ -21,14 +21,14 @@ public interface LibraryDao {
     @Query("SELECT media_type FROM albums")
     LiveData<List<String>> getByMedia();
 
-    @Query("SELECT * FROM albums WHERE media_type IN (:mediaType)")
+    @Query("SELECT * FROM albums WHERE media_type = :mediaType ORDER BY albumName COLLATE NOCASE")
     LiveData<List<Album>> getAllByMediaType(String mediaType);
 
     @Insert
     void insertAll(Album... albums);
 
     @Insert
-    void insertByMediaType(Album album);
+    long insert(Album album);
 
     @Delete
     void delete(Album album);

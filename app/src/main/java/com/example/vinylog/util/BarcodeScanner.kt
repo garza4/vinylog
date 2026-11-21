@@ -1,7 +1,6 @@
 package com.example.vinylog.util
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -23,8 +22,9 @@ class BarcodeScanner(private val activity: ComponentActivity) {
     private val barcodeLauncher: ActivityResultLauncher<ScanOptions> = activity.registerForActivityResult(
         ScanContract()
     ) { result ->
-        if (result.contents != null) {
-            scanResultListener?.onScanResult(result.contents)
+        val contents = result.contents
+        if (!contents.isNullOrBlank()) {
+            scanResultListener?.onScanResult(contents)
         } else {
             scanResultListener?.onScanCancelled()
         }
@@ -37,11 +37,11 @@ class BarcodeScanner(private val activity: ComponentActivity) {
             startScanning()
         } else {
             scanResultListener?.onPermissionDenied()
-            Toast.makeText(activity, "Camera permission denied", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity, "Camera permission is needed to scan a barcode", Toast.LENGTH_SHORT).show()
         }
     }
 
-    fun setScanResultListener(listener: ScanResultListener) {
+    fun setScanResultListener(listener: ScanResultListener?) {
         this.scanResultListener = listener
     }
 
@@ -55,9 +55,21 @@ class BarcodeScanner(private val activity: ComponentActivity) {
 
     private fun startScanning() {
         val options = ScanOptions().apply {
-            setPrompt("Scan a barcode")
+            setPrompt("Line the barcode up inside the frame")
             setBeepEnabled(true)
-            setBarcodeImageEnabled(true)
+            // Returning the camera bitmap with the result crashes or drops the scan on some devices.
+            setBarcodeImageEnabled(false)
+            setOrientationLocked(false)
+            setDesiredBarcodeFormats(
+                listOf(
+                    ScanOptions.UPC_A,
+                    ScanOptions.UPC_E,
+                    ScanOptions.EAN_13,
+                    ScanOptions.EAN_8,
+                    ScanOptions.CODE_128,
+                    ScanOptions.QR_CODE,
+                )
+            )
         }
         barcodeLauncher.launch(options)
     }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Divider
@@ -23,68 +24,102 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.vinylog.dialogs.MediaSaveDialog
 import com.example.vinylog.objects.Album
-import com.example.vinylog.objects.MCollection
 import com.example.vinylog.objects.database.DatabaseSingleton
 import com.example.vinylog.ui.theme.VinyLogTheme
+import com.example.vinylog.util.BarcodeScanner
+
+data class BarcodeScan(val barcode: String, val token: Long)
 
 class AlbumView : ComponentActivity() {
-    private lateinit var barcodeScanner: com.example.vinylog.util.BarcodeScanner
+    private lateinit var barcodeScanner: BarcodeScanner
+
+    private val mediaType: String by lazy {
+        intent.getStringExtra("mt")?.takeIf { it.isNotBlank() } ?: "Vinyl"
+    }
 
     private val albumViewModel: AlbumViewModel by lazy {
-        val bundle = intent.extras
-        ViewModelProvider(this, AlbumViewModelFactory(application,bundle?.getString("mt"))).get(AlbumViewModel::class.java)
+        ViewModelProvider(
+            this,
+            AlbumViewModelFactory(application, mediaType),
+        )[AlbumViewModel::class.java]
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        var mediaType: String? = null
         val db = DatabaseSingleton.getDatabase(applicationContext)
-        barcodeScanner = com.example.vinylog.util.BarcodeScanner(this)
+        barcodeScanner = BarcodeScanner(this)
+        // Register before the activity is started so a scan result still arrives
+        // if the screen is recreated while the camera is open.
+        barcodeScanner.setScanResultListener(object : BarcodeScanner.ScanResultListener {
+            override fun onScanResult(barcode: String) {
+                albumViewModel.onBarcodeScanned(barcode)
+            }
+
+            override fun onScanCancelled() = Unit
+
+            override fun onPermissionDenied() = Unit
+        })
 
         setContent {
             VinyLogTheme {
-                var showDialog by remember { mutableStateOf(false) }
+                var showDialog by rememberSaveable { mutableStateOf(false) }
+                val scannedBarcode by albumViewModel.scannedBarcode.observeAsState()
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     Scaffold(
                         floatingActionButton = {
                             FloatingActionButton(
                                 onClick = { showDialog = true },
-                                interactionSource = remember { MutableInteractionSource() }
+                                interactionSource = remember { MutableInteractionSource() },
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = "Add")
                             }
-                        }
+                        },
                     ) { innerPadding ->
                         Column(
-                            modifier = Modifier.padding(innerPadding),
+                            modifier = Modifier
+                                .padding(innerPadding)
+                                .fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(16.dp),
                         ) {
-                            val bundle = intent.extras
-                            mediaType = bundle?.getString("mt")
-                            val myObj = bundle?.getSerializable("group") as? MCollection
                             if (showDialog) {
-                                if (mediaType != null) {
-                                    MediaSaveDialog(mediaType!!, onDismiss = { showDialog = false }, db,barcodeScanner=barcodeScanner)
-                                }
+                                MediaSaveDialog(
+                                    mediaType = mediaType,
+                                    onDismiss = { showDialog = false },
+                                    db = db,
+                                    barcodeScanner = barcodeScanner,
+                                    scannedBarcode = scannedBarcode,
+                                    onBarcodeHandled = { albumViewModel.consumeBarcode() },
+                                )
                             }
                             val albums by albumViewModel.albums.observeAsState(emptyList())
-
-                            LazyVerticalGrid(columns = GridCells.Adaptive(minSize = 30.dp)) {
-                                albums.forEach { album ->
-                                    item(span = { GridItemSpan(maxLineSpan) }) {
-                                        Text(text = album.toString(), onTextLayout = {})
-                                        Divider()
-                                    }
+                            if (albums.isEmpty()) {
+                                Text(
+                                    text = "No entries yet. Tap + to scan a barcode or add one.",
+                                    modifier = Modifier.padding(16.dp),
+                                )
+                            }
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 30.dp),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                items(albums, key = { it.id }, span = { GridItemSpan(maxLineSpan) }) { album ->
+                                    Text(
+                                        text = album.toString(),
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    )
+                                    Divider()
                                 }
                             }
                         }
@@ -95,17 +130,31 @@ class AlbumView : ComponentActivity() {
     }
 }
 
-class AlbumViewModelFactory(private val application: Application, private val mediaType: String?) : ViewModelProvider.Factory {
+class AlbumViewModelFactory(
+    private val application: Application,
+    private val mediaType: String,
+) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(AlbumViewModel::class.java)) {
+        if (AlbumViewModel::class.java.isAssignableFrom(modelClass)) {
             @Suppress("UNCHECKED_CAST")
-            return mediaType?.let { AlbumViewModel(application, it) } as T
+            return AlbumViewModel(application, mediaType) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
 
-class AlbumViewModel(application: android.app.Application,mediaType:String) : ViewModel() {
+class AlbumViewModel(application: Application, mediaType: String) : ViewModel() {
     private val db = DatabaseSingleton.getDatabase(application)
     val albums: LiveData<List<Album>> = db.libraryDao().getAllByMediaType(mediaType)
+    val scannedBarcode = MutableLiveData<BarcodeScan?>(null)
+
+    fun onBarcodeScanned(barcode: String) {
+        val trimmed = barcode.trim()
+        if (trimmed.isEmpty()) return
+        scannedBarcode.value = BarcodeScan(trimmed, System.nanoTime())
+    }
+
+    fun consumeBarcode() {
+        scannedBarcode.value = null
+    }
 }

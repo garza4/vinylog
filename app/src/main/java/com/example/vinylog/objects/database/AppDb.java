@@ -6,8 +6,7 @@ import androidx.room.RoomDatabase;
 import com.example.vinylog.objects.Album;
 import com.example.vinylog.objects.dao.LibraryDao;
 
-@Database(entities = {Album.class},version=1)
+@Database(entities = {Album.class}, version = 2, exportSchema = false)
 public abstract class AppDb extends RoomDatabase {
     public abstract LibraryDao libraryDao();
-
 }
