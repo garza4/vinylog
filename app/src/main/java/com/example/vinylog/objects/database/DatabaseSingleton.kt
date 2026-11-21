@@ -1,7 +1,9 @@
 package com.example.vinylog.objects.database
 
 import android.content.Context
-import androidx.room.Room
+import androidx.room3.Room
+import androidx.sqlite.driver.AndroidSQLiteDriver
+import kotlinx.coroutines.Dispatchers
 
 object DatabaseSingleton {
     @Volatile
@@ -17,7 +19,8 @@ object DatabaseSingleton {
                 // Version 1 keyed rows by album title and had no barcode column.
                 // Those installs could not store a scanned entry reliably.
                 .fallbackToDestructiveMigration()
-                .allowMainThreadQueries()
+                .setDriver(AndroidSQLiteDriver())
+                .setQueryCoroutineContext(Dispatchers.IO)
                 .build()
             INSTANCE = instance
             instance

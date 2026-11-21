@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -59,7 +59,7 @@ class MainActivity : ComponentActivity() {
                                     style = MaterialTheme.typography.headlineLarge,
                                     modifier = Modifier.padding(bottom = 8.dp)
                                 )
-                                Divider()
+                                HorizontalDivider()
                                 Spacer(modifier = Modifier.height(8.dp))
                                 TextButton(
                                     onClick = {
@@ -70,7 +70,7 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Text(text = "Vinyl", onTextLayout = {})
                                 }
-                                Divider()
+                                HorizontalDivider()
                                 TextButton(
                                     onClick = {
                                         startActivity(Intent(this@MainActivity, AlbumView::class.java).putExtra("mt", "CDs"))
@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Text(text = "CDs", onTextLayout = {})
                                 }
-                                Divider()
+                                HorizontalDivider()
                                 TextButton(
                                     onClick = {
                                         startActivity(Intent(this@MainActivity, AlbumView::class.java).putExtra("mt", "Movies"))

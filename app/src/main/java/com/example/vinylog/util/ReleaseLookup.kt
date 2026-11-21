@@ -230,7 +230,7 @@ class ReleaseLookup(
         }
 
         private fun parseObject(json: String): JsonObject? {
-            val element = JsonParser().parse(json)
+            val element = JsonParser.parseString(json)
             return element.asObject()
         }
 

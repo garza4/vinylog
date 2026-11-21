@@ -15,7 +15,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -119,7 +119,7 @@ class AlbumView : ComponentActivity() {
                                         text = album.toString(),
                                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                     )
-                                    Divider()
+                                    HorizontalDivider()
                                 }
                             }
                         }
