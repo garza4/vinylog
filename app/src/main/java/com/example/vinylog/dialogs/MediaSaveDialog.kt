@@ -72,7 +72,7 @@ fun MediaSaveDialog(
         if (code.isEmpty()) return@LaunchedEffect
         if (!catalogLookup) {
             draft = draft.copy(barcode = code, media = draft.media.ifBlank { mediaType })
-            note = "Enter the game details, then save."
+            note = "Enter the details, then save."
             choice = "manual"
             onBarcodeHandled()
             return@LaunchedEffect

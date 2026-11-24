@@ -8,7 +8,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -20,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LiveData
 import com.example.vinylog.activities.AlbumView
@@ -27,6 +31,7 @@ import com.example.vinylog.activities.GameLibraryActivity
 import com.example.vinylog.objects.Album
 import com.example.vinylog.objects.MCollection
 import com.example.vinylog.objects.MusicCollection
+import com.example.vinylog.ui.Book
 import com.example.vinylog.ui.CompactDisc
 import com.example.vinylog.ui.GameCartridge
 import com.example.vinylog.ui.MovieCase
@@ -59,25 +64,59 @@ class MainActivity : ComponentActivity() {
                             style = MaterialTheme.typography.headlineLarge,
                             modifier = Modifier.padding(bottom = 8.dp),
                         )
-                        LibraryChoice(label = "Vinyl", onClick = {
-                            startActivity(Intent(this@MainActivity, AlbumView::class.java).putExtra("mt", "Vinyl"))
-                        }) {
-                            VinylRecord(holeColor = hole)
-                        }
-                        LibraryChoice(label = "CDs", onClick = {
-                            startActivity(Intent(this@MainActivity, AlbumView::class.java).putExtra("mt", "CDs"))
-                        }) {
-                            CompactDisc(holeColor = hole)
-                        }
-                        LibraryChoice(label = "Movies", onClick = {
-                            startActivity(Intent(this@MainActivity, AlbumView::class.java).putExtra("mt", "Movies"))
-                        }) {
-                            MovieCase()
-                        }
-                        LibraryChoice(label = "Video Games", onClick = {
-                            startActivity(Intent(this@MainActivity, GameLibraryActivity::class.java))
-                        }) {
-                            GameCartridge()
+                        Column(Modifier.weight(1f).fillMaxWidth()) {
+                            Row(Modifier.weight(1f).fillMaxWidth()) {
+                                LibraryChoice(
+                                    label = "Vinyl",
+                                    onClick = {
+                                        startActivity(Intent(this@MainActivity, AlbumView::class.java).putExtra("mt", "Vinyl"))
+                                    },
+                                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                                ) {
+                                    VinylRecord(holeColor = hole)
+                                }
+                                LibraryChoice(
+                                    label = "CDs",
+                                    onClick = {
+                                        startActivity(Intent(this@MainActivity, AlbumView::class.java).putExtra("mt", "CDs"))
+                                    },
+                                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                                ) {
+                                    CompactDisc(holeColor = hole)
+                                }
+                            }
+                            Row(Modifier.weight(1f).fillMaxWidth()) {
+                                LibraryChoice(
+                                    label = "Movies",
+                                    onClick = {
+                                        startActivity(Intent(this@MainActivity, AlbumView::class.java).putExtra("mt", "Movies"))
+                                    },
+                                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                                ) {
+                                    MovieCase()
+                                }
+                                LibraryChoice(
+                                    label = "Video Games",
+                                    onClick = {
+                                        startActivity(Intent(this@MainActivity, GameLibraryActivity::class.java))
+                                    },
+                                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                                ) {
+                                    GameCartridge()
+                                }
+                            }
+                            Row(Modifier.weight(1f).fillMaxWidth()) {
+                                LibraryChoice(
+                                    label = "Books",
+                                    onClick = {
+                                        startActivity(Intent(this@MainActivity, AlbumView::class.java).putExtra("mt", "Books"))
+                                    },
+                                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                                ) {
+                                    Book()
+                                }
+                                Spacer(Modifier.weight(1f))
+                            }
                         }
                     }
                 }
@@ -87,16 +126,14 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun ColumnScope.LibraryChoice(
+private fun LibraryChoice(
     label: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     art: @Composable () -> Unit,
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .weight(1f)
-            .clickable(role = Role.Button, onClick = onClick),
+        modifier = modifier.clickable(role = Role.Button, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -105,12 +142,21 @@ private fun ColumnScope.LibraryChoice(
                 .fillMaxWidth(),
             contentAlignment = Alignment.Center,
         ) {
-            art()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .padding(6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                art()
+            }
         }
         Text(
             text = label,
             style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 4.dp),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
         )
     }
 }

@@ -118,10 +118,10 @@ class AlbumView : ComponentActivity() {
                                     barcodeScanner = barcodeScanner,
                                     scannedBarcode = scannedBarcode,
                                     onBarcodeHandled = { albumViewModel.consumeBarcode() },
-                                    catalogLookup = !isGameSystem(mediaType),
+                                    catalogLookup = !skipsCatalogLookup(mediaType),
                                 )
                             }
-                            if (isGameSystem(mediaType)) {
+                            if (isGameSystem(mediaType) || mediaType == "Books") {
                                 Text(
                                     text = mediaType,
                                     style = MaterialTheme.typography.headlineMedium,
@@ -143,10 +143,13 @@ class AlbumView : ComponentActivity() {
                             }
                             if (albums.isEmpty()) {
                                 Text(
-                                    text = if (isGameSystem(mediaType)) {
-                                        "No games yet. Tap + to scan a barcode or add one."
-                                    } else {
-                                        "No entries yet. Tap + to scan a barcode or add one."
+                                    text = when {
+                                        isGameSystem(mediaType) ->
+                                            "No games yet. Tap + to scan a barcode or add one."
+                                        mediaType == "Books" ->
+                                            "No books yet. Tap + to scan a barcode or add one."
+                                        else ->
+                                            "No entries yet. Tap + to scan a barcode or add one."
                                     },
                                     modifier = Modifier.padding(16.dp),
                                 )
@@ -167,6 +170,10 @@ class AlbumView : ComponentActivity() {
             }
         }
     }
+}
+
+private fun skipsCatalogLookup(mediaType: String): Boolean {
+    return isGameSystem(mediaType) || mediaType == "Books"
 }
 
 class AlbumViewModelFactory(
@@ -200,7 +207,7 @@ class AlbumViewModel(application: Application, private val mediaType: String) : 
     }
 
     fun enrichIncomplete(albums: List<Album>) {
-        if (isGameSystem(mediaType)) return
+        if (skipsCatalogLookup(mediaType)) return
         albums.filter { it.needsCatalogDetails() }.forEach { album ->
             if (!enrichStarted.add(album.id)) return@forEach
             enriching.value = enriching.value.orEmpty() + album.id

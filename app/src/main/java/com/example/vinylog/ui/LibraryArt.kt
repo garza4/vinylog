@@ -270,5 +270,68 @@ fun GameCartridge(
     }
 }
 
+@Composable
+fun Book(modifier: Modifier = Modifier.discSize()) {
+    Canvas(modifier) {
+        val bookH = size.minDimension * 0.88f
+        val bookW = bookH * 0.74f
+        val left = (size.width - bookW) / 2f
+        val top = (size.height - bookH) / 2f
+        val spine = bookW * 0.16f
+        val page = bookW * 0.07f
+        val radius = CornerRadius(bookW * 0.045f, bookW * 0.045f)
+
+        drawRoundRect(
+            color = Color.Black.copy(alpha = 0.28f),
+            topLeft = Offset(left + bookW * 0.05f, top + bookH * 0.035f),
+            size = Size(bookW, bookH),
+            cornerRadius = radius,
+        )
+        drawRoundRect(
+            color = Color(0xFFF4E7D4),
+            topLeft = Offset(left + spine * 0.4f, top + bookH * 0.025f),
+            size = Size(bookW - spine * 0.4f, bookH * 0.95f),
+            cornerRadius = CornerRadius(bookW * 0.03f, bookW * 0.03f),
+        )
+        val lineCount = 7
+        for (i in 0 until lineCount) {
+            val y = top + bookH * (0.12f + i * 0.11f)
+            drawLine(
+                color = Color(0xFFD9C4A8),
+                start = Offset(left + bookW - page * 0.85f, y),
+                end = Offset(left + bookW - page * 0.15f, y),
+                strokeWidth = bookH * 0.012f,
+            )
+        }
+        drawRoundRect(
+            color = Color(0xFF8E2E2E),
+            topLeft = Offset(left, top),
+            size = Size(bookW - page, bookH),
+            cornerRadius = radius,
+        )
+        drawRoundRect(
+            color = Color(0xFF6E2222),
+            topLeft = Offset(left, top),
+            size = Size(spine, bookH),
+            cornerRadius = CornerRadius(bookW * 0.04f, bookW * 0.04f),
+        )
+        drawRect(
+            color = Color(0xFFC6A15A),
+            topLeft = Offset(left + spine * 0.38f, top + bookH * 0.12f),
+            size = Size(spine * 0.12f, bookH * 0.76f),
+        )
+        drawRect(
+            color = Color(0xFFF4E4C4),
+            topLeft = Offset(left + spine + bookW * 0.08f, top + bookH * 0.22f),
+            size = Size(bookW * 0.46f, bookH * 0.045f),
+        )
+        drawRect(
+            color = Color.White.copy(alpha = 0.75f),
+            topLeft = Offset(left + spine + bookW * 0.08f, top + bookH * 0.32f),
+            size = Size(bookW * 0.32f, bookH * 0.03f),
+        )
+    }
+}
+
 private fun Modifier.discSize(): Modifier =
     this.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true)
