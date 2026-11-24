@@ -2,22 +2,17 @@
 
 VinyLog is an Android app for a physical media collection. Scan a barcode or type an entry, and it stays in an on-device library.
 
-The home screen is **Select Library**. Vinyl, CDs, Movies, and Books each open their own shelf. Video Games opens a list of systems, and each system has its own shelf. The system names are in `app/src/main/java/com/example/vinylog/games/GameSystems.kt`.
+The home screen is **Select Library**. Vinyl, CDs, Movies, Books, and TV Shows each open their own shelf. Video Games opens a list of systems, and each system has its own shelf. The system names are in `app/src/main/java/com/example/vinylog/games/GameSystems.kt`.
 
-A shelf row shows the cover, title, artist, and year. Tap a row for the label, genre, format, barcode, and track list. Covers load from the URL saved with the entry.
+A shelf row shows the cover, title, and the main credit and year. The fields you enter depend on the library. Vinyl and CDs use artist, label, and tracks. Movies use director, studio, cast, runtime, and format. Books use author, publisher, pages, format, and ISBN. Games use developer, publisher, rating, and players. TV shows use creator, network, seasons, episodes, cast, and format. Release year, genre, barcode, and cover are shared. Covers load from the URL saved with the entry.
 
 ## Catalog lookup
 
-For vinyl, CDs, and movies, a barcode is looked up in this order:
+Scanning a barcode lists the catalog matches and waits for you to pick one. Nothing is saved until you choose a match, or enter the details yourself. Vinyl and CDs list each MusicBrainz pressing, and iTunes when the barcode is not in MusicBrainz. Movies, TV shows, and games list Wikipedia matches for the product title. Books list Open Library editions. The match you pick fills that shelf's fields.
 
-1. MusicBrainz, by barcode
-2. UPC Item DB, when the barcode is missing or the match is thin
-3. MusicBrainz again, by album and artist
-4. iTunes, for any tracks, year, or cover still missing
+Vinyl and CD shelves that already have a barcode but no tracks, year, or cover are filled in when that shelf opens.
 
-Shelves that already have a barcode but no tracks, year, or cover are filled in when that shelf opens. Video game and book barcodes are saved as entered and are not looked up automatically.
-
-Open an entry to see its details. The pencil at the top right edits the saved fields. Search finds other catalog matches, and the one you pick replaces the entry's details. Vinyl and CDs search MusicBrainz and iTunes. Movies and games search Wikipedia. Books search Open Library.
+Open an entry to see its details. The pencil at the top right edits the saved fields. The trash can asks you to confirm, then removes that entry from the shelf. Search finds other catalog matches, and the one you pick replaces the entry's details, including the fields for that library. Vinyl and CDs search MusicBrainz and iTunes. Movies, TV shows, and games search Wikipedia and Wikidata. Books search Open Library.
 
 Entries are stored in a Room database named `library`.
 

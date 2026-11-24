@@ -9,7 +9,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,6 +34,7 @@ import com.example.vinylog.ui.Book
 import com.example.vinylog.ui.CompactDisc
 import com.example.vinylog.ui.GameCartridge
 import com.example.vinylog.ui.MovieCase
+import com.example.vinylog.ui.Television
 import com.example.vinylog.ui.VinylRecord
 import com.example.vinylog.ui.theme.VinyLogTheme
 import java.io.File
@@ -115,7 +115,15 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Book()
                                 }
-                                Spacer(Modifier.weight(1f))
+                                LibraryChoice(
+                                    label = "TV Shows",
+                                    onClick = {
+                                        startActivity(Intent(this@MainActivity, AlbumView::class.java).putExtra("mt", "TV Shows"))
+                                    },
+                                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                                ) {
+                                    Television()
+                                }
                             }
                         }
                     }

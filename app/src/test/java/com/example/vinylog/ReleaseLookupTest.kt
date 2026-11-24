@@ -8,6 +8,7 @@ import com.example.vinylog.util.ReleaseLookup
 import com.example.vinylog.util.ScannedRelease
 import com.example.vinylog.util.SearchResult
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -202,6 +203,150 @@ class ReleaseLookupTest {
     }
 
     @Test
+    fun search_findsSignsWhenTheSavedTitleIsTheRetailEdition() {
+        val fetched = mutableListOf<String>()
+        val lookup = ReleaseLookup { url ->
+            fetched += url
+            SIGNS_WIKI_JSON
+        }
+
+        val result = lookup.search(
+            "Mill Creek - Signs",
+            "Mill Creek Botanicals",
+            "Movies",
+            "786936767155",
+        ) as SearchResult.Hits
+
+        assertEquals("Signs", result.releases[0].album)
+        assertEquals("M. Night Shyamalan", result.releases[0].artist)
+        assertEquals("2002", result.releases[0].year)
+        assertEquals("wd:Q22432", result.releases[0].catalogId)
+        assertEquals(listOf("Signs", "Signs of Life"), result.releases.map { it.album })
+        assertTrue(fetched.single().contains("Signs+film"))
+        assertFalse(fetched.single().contains("Mill"))
+        assertFalse(fetched.single().contains("Botanical"))
+        assertEquals("Signs", ReleaseLookup.catalogQueryTitle("Mill Creek - Signs", "Mill Creek Botanicals", "Movies"))
+        assertEquals("", ReleaseLookup.catalogQueryCredit("Mill Creek - Signs", "Mill Creek Botanicals", "Movies"))
+    }
+
+    @Test
+    fun lookupChoices_listsFilmMatchesInsteadOfTheRetailBrand() {
+        val fetched = mutableListOf<String>()
+        val lookup = ReleaseLookup { url ->
+            fetched += url
+            when {
+                url.contains("upcitemdb") ->
+                    """{"code":"OK","items":[{"title":"Mill Creek - Signs [BLU-RAY]","brand":"Mill Creek Botanicals","category":"Electronics > Video"}]}"""
+                url.contains("wikipedia.org") -> SIGNS_WIKI_JSON
+                else -> error("unexpected $url")
+            }
+        }
+
+        val result = lookup.lookupChoices("786936767155", "Movies") as SearchResult.Hits
+        assertEquals(listOf("Signs", "Signs of Life"), result.releases.map { it.album })
+        assertEquals("M. Night Shyamalan", result.releases[0].artist)
+        assertEquals("2002", result.releases[0].year)
+        assertTrue(fetched.any { it.contains("Signs+film") })
+        assertTrue(result.releases.none { it.artist.contains("Botanical") })
+    }
+
+    @Test
+    fun lookupChoices_listsEveryMusicBrainzReleaseForTheBarcode() {
+        val lookup = ReleaseLookup { url ->
+            assertTrue(url.contains("limit=8"))
+            """{"releases":[
+                {"id":"one","title":"Dummy","date":"1994","country":"US","artist-credit":[{"name":"Portishead","joinphrase":""}],"media":[{"format":"Vinyl"}]},
+                {"id":"two","title":"Dummy","date":"1994","country":"GB","artist-credit":[{"name":"Portishead","joinphrase":""}],"media":[{"format":"CD"}]}
+            ]}"""
+        }
+
+        val result = lookup.lookupChoices("012345678905", "Vinyl") as SearchResult.Hits
+        assertEquals(listOf("mb:one", "mb:two"), result.releases.map { it.catalogId })
+        assertEquals(listOf("Vinyl · US", "CD · GB"), result.releases.map { it.hint })
+    }
+
+    @Test
+    fun lookupChoices_listsOpenLibraryEditionsForAnIsbn() {
+        val lookup = ReleaseLookup { url ->
+            assertTrue(url.contains("openlibrary.org"))
+            """{"docs":[
+                {"title":"The Hobbit","author_name":["J.R.R. Tolkien"],"first_publish_year":1937,"publisher":["Allen & Unwin"],"isbn":["9780261102217"]},
+                {"title":"The Hobbit","author_name":["J.R.R. Tolkien"],"first_publish_year":1999,"publisher":["HarperCollins"],"isbn":["9780261102217"]}
+            ]}"""
+        }
+
+        val result = lookup.lookupChoices("9780261102217", "Books") as SearchResult.Hits
+        assertEquals(listOf("1937", "1999"), result.releases.map { it.year })
+        assertEquals("J.R.R. Tolkien", result.releases[0].artist)
+        assertTrue(result.releases.all { it.catalogId == "ol:9780261102217" })
+    }
+
+    @Test
+    fun lookupChoices_listsGameMatchesFromTheRetailTitle() {
+        val lookup = ReleaseLookup { url ->
+            when {
+                url.contains("upcitemdb") ->
+                    """{"code":"OK","items":[{"title":"Tears of the Kingdom","brand":"Nintendo","category":"Video Games"}]}"""
+                url.contains("wikipedia.org") -> {
+                    assertTrue(url.contains("video+game"))
+                    WIKI_GAME_JSON
+                }
+                else -> error("unexpected $url")
+            }
+        }
+
+        val result = lookup.lookupChoices("045496590123", "Nintendo Switch") as SearchResult.Hits
+        assertEquals("The Legend of Zelda: Tears of the Kingdom", result.releases.single().album)
+        assertEquals("Nintendo", result.releases.single().artist)
+        assertEquals("2023", result.releases.single().year)
+    }
+
+    @Test
+    fun search_usesWikipediaForTvShows() {
+        val lookup = ReleaseLookup { url ->
+            assertTrue(url.contains("tv+series"))
+            """{"query":{"pages":{
+              "1":{"index":1,"title":"The Office (American TV series)","pageprops":{"wikibase_item":"Q2385"},"terms":{"description":["American mockumentary television sitcom created by Greg Daniels"]}},
+              "2":{"index":2,"title":"Office Space","terms":{"description":["1999 film directed by Mike Judge"]}}
+            }}}"""
+        }
+
+        val result = lookup.search("The Office", "", "TV Shows", "") as SearchResult.Hits
+        assertEquals("The Office", result.releases.single().album)
+        assertEquals("Greg Daniels", result.releases.single().artist)
+        assertEquals("wd:Q2385", result.releases.single().catalogId)
+    }
+
+    @Test
+    fun parseWikidataDetails_readsATelevisionSeries() {
+        val release = ReleaseLookup.parseWikidataDetails(
+            """{"entities":{"Q1":{"claims":{
+              "P170":[{"mainsnak":{"datavalue":{"type":"wikibase-entityid","value":{"id":"Q10"}}}}],
+              "P449":[{"mainsnak":{"datavalue":{"type":"wikibase-entityid","value":{"id":"Q11"}}}}],
+              "P161":[
+                {"mainsnak":{"datavalue":{"type":"wikibase-entityid","value":{"id":"Q12"}}}},
+                {"mainsnak":{"datavalue":{"type":"wikibase-entityid","value":{"id":"Q13"}}}}
+              ],
+              "P580":[{"mainsnak":{"datavalue":{"type":"time","value":{"time":"+2008-01-20T00:00:00Z"}}}}],
+              "P2437":[{"mainsnak":{"datavalue":{"type":"quantity","value":{"amount":"+5","unit":"1"}}}}],
+              "P1113":[{"mainsnak":{"datavalue":{"type":"quantity","value":{"amount":"+62","unit":"1"}}}}]
+            }}}}""",
+            """{"entities":{
+              "Q10":{"labels":{"en":{"value":"Vince Gilligan"}}},
+              "Q11":{"labels":{"en":{"value":"AMC"}}},
+              "Q12":{"labels":{"en":{"value":"Bryan Cranston"}}},
+              "Q13":{"labels":{"en":{"value":"Aaron Paul"}}}
+            }}""",
+        )
+        assertEquals("Vince Gilligan", release?.artist)
+        assertEquals("AMC", release?.label)
+        assertEquals("2008", release?.year)
+        assertEquals("5", release?.pages)
+        assertEquals("62", release?.players)
+        assertEquals("Bryan Cranston\nAaron Paul", release?.cast)
+    }
+
+    @Test
     fun search_usesWikipediaForMoviesAndSkipsUnrelatedPages() {
         val lookup = ReleaseLookup { url ->
             assertTrue(url.contains("en.wikipedia.org"))
@@ -231,15 +376,66 @@ class ReleaseLookupTest {
     }
 
     @Test
+    fun loadChoice_fillsMovieDetailsFromWikidata() {
+        val lookup = ReleaseLookup { url ->
+            when {
+                url.contains("wbgetentities") && url.contains("props=claims") -> WIKIDATA_CLAIMS_JSON
+                url.contains("props=labels") -> WIKIDATA_LABELS_JSON
+                else -> error("unexpected $url")
+            }
+        }
+        val full = lookup.loadChoice(
+            ScannedRelease(
+                album = "The Thing",
+                artist = "John Carpenter",
+                songs = "",
+                year = "1982",
+                genre = "",
+                barcode = "",
+                catalogId = "wd:Q210756",
+            ),
+        )
+        assertEquals("John Carpenter", full.artist)
+        assertEquals("Universal Pictures", full.label)
+        assertEquals("1982", full.year)
+        assertEquals("109 min", full.runtime)
+        assertEquals("Kurt Russell\nKeith David", full.cast)
+        assertEquals("horror film", full.genre)
+        assertTrue(full.coverUrl.contains("The%20Thing"))
+    }
+
+    @Test
+    fun loadChoice_fillsBookPagesAndFormat() {
+        val lookup = ReleaseLookup { url ->
+            when {
+                url.contains("openlibrary.org/search.json") ->
+                    """{"docs":[{"title":"The Hobbit","author_name":["J.R.R. Tolkien"],"first_publish_year":1937,"publisher":["Allen & Unwin"],"cover_i":99,"subject":["Accessible book","Fantasy"],"number_of_pages_median":310,"isbn":["9780261102217"]}]}"""
+                url.contains("openlibrary.org/isbn/") ->
+                    """{"title":"The Hobbit","number_of_pages":310,"physical_format":"Hardcover","publishers":["Houghton Mifflin"],"publish_date":"September 15, 2002"}"""
+                else -> error("unexpected $url")
+            }
+        }
+        val found = lookup.search("The Hobbit", "Tolkien", "Books", "") as SearchResult.Hits
+        assertEquals("310", found.releases[0].pages)
+        assertEquals("Fantasy", found.releases[0].genre)
+        assertEquals("ol:9780261102217", found.releases[0].catalogId)
+        val full = lookup.loadChoice(found.releases[0])
+        assertEquals("Hardcover", full.format)
+        assertEquals("310", full.pages)
+        assertEquals("The Hobbit", full.album)
+    }
+
+    @Test
     fun edited_keepsTheRowIdAndMediaType() {
         val album = Album("Old", "A", "track", "1999", "Jazz", "Books", "111", "https://cover", "Label")
         album.id = 4
-        val updated = album.edited(album.toDraft().copy(album = "New", artist = "B", songs = ""))
+        val updated = album.edited(album.toDraft().copy(title = "New", person = "B", tracks = "", pages = "320"))
         assertEquals(4L, updated.id)
         assertEquals("Books", updated.mediaType)
         assertEquals("New", updated.albumName)
         assertEquals("B", updated.artistName)
         assertEquals("", updated.songsOnRecord)
+        assertEquals("320", updated.pageCount)
         assertEquals("Old", album.albumName)
         assertEquals("111", updated.barcode)
     }
@@ -330,6 +526,40 @@ class ReleaseLookupTest {
               "primaryGenreName":"Alternative",
               "artworkUrl100":"https://example.com/100x100bb.jpg"
             }]}
+        """
+
+        const val WIKIDATA_CLAIMS_JSON = """
+            {"entities":{"Q210756":{"claims":{
+              "P57":[{"mainsnak":{"datavalue":{"type":"wikibase-entityid","value":{"id":"Q95008"}}}}],
+              "P272":[{"mainsnak":{"datavalue":{"type":"wikibase-entityid","value":{"id":"Q168383"}}}}],
+              "P161":[
+                {"mainsnak":{"datavalue":{"type":"wikibase-entityid","value":{"id":"Q103157"}}}},
+                {"mainsnak":{"datavalue":{"type":"wikibase-entityid","value":{"id":"Q310392"}}}}
+              ],
+              "P2047":[{"mainsnak":{"datavalue":{"type":"quantity","value":{"amount":"+109","unit":"http://www.wikidata.org/entity/Q7727"}}}}],
+              "P136":[{"mainsnak":{"datavalue":{"type":"wikibase-entityid","value":{"id":"Q200092"}}}}],
+              "P577":[{"mainsnak":{"datavalue":{"type":"time","value":{"time":"+1982-06-25T00:00:00Z"}}}}],
+              "P18":[{"mainsnak":{"datavalue":{"type":"string","value":"The Thing still.jpg"}}}]
+            }}}}
+        """
+
+        const val WIKIDATA_LABELS_JSON = """
+            {"entities":{
+              "Q95008":{"labels":{"en":{"value":"John Carpenter"}}},
+              "Q168383":{"labels":{"en":{"value":"Universal Pictures"}}},
+              "Q103157":{"labels":{"en":{"value":"Kurt Russell"}}},
+              "Q310392":{"labels":{"en":{"value":"Keith David"}}},
+              "Q200092":{"labels":{"en":{"value":"horror film"}}}
+            }}
+        """
+
+        const val SIGNS_WIKI_JSON = """
+            {"query":{"pages":{
+              "1":{"index":1,"title":"Signs of Life (1989 film)","terms":{"description":["1989 film by John David Coles"]}},
+              "2":{"index":2,"title":"Signs (film)","pageprops":{"wikibase_item":"Q22432"},"terms":{"description":["2002 film directed by M. Night Shyamalan"]}},
+              "3":{"index":3,"title":"M. Night Shyamalan","terms":{"description":["American filmmaker"]}},
+              "4":{"index":4,"title":"M. Night Shyamalan filmography","terms":{"description":["list article of films by M. Night Shyamalan"]}}
+            }}}
         """
 
         const val WIKI_FILM_JSON = """

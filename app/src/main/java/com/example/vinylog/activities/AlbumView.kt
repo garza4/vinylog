@@ -46,6 +46,8 @@ import com.example.vinylog.dialogs.AlbumDetailDialog
 import com.example.vinylog.dialogs.CoverImage
 import com.example.vinylog.dialogs.MediaSaveDialog
 import com.example.vinylog.games.isGameSystem
+import com.example.vinylog.media.MediaKind
+import com.example.vinylog.media.mediaKind
 import com.example.vinylog.objects.Album
 import com.example.vinylog.objects.database.DatabaseSingleton
 import com.example.vinylog.ui.theme.VinyLogTheme
@@ -121,10 +123,9 @@ class AlbumView : ComponentActivity() {
                                     barcodeScanner = barcodeScanner,
                                     scannedBarcode = scannedBarcode,
                                     onBarcodeHandled = { albumViewModel.consumeBarcode() },
-                                    catalogLookup = !skipsCatalogLookup(mediaType),
                                 )
                             }
-                            if (isGameSystem(mediaType) || mediaType == "Books") {
+                            if (isGameSystem(mediaType) || mediaType == "Books" || mediaType == "TV Shows") {
                                 Text(
                                     text = mediaType,
                                     style = MaterialTheme.typography.headlineMedium,
@@ -154,6 +155,7 @@ class AlbumView : ComponentActivity() {
                                     onChoose = { release ->
                                         albumViewModel.applyChoice(selected, release)
                                     },
+                                    onDelete = { album -> albumViewModel.delete(album) },
                                 )
                             }
                             if (albums.isEmpty()) {
@@ -163,6 +165,8 @@ class AlbumView : ComponentActivity() {
                                             "No games yet. Tap + to scan a barcode or add one."
                                         mediaType == "Books" ->
                                             "No books yet. Tap + to scan a barcode or add one."
+                                        mediaType == "TV Shows" ->
+                                            "No shows yet. Tap + to scan a barcode or add one."
                                         else ->
                                             "No entries yet. Tap + to scan a barcode or add one."
                                     },
@@ -185,10 +189,6 @@ class AlbumView : ComponentActivity() {
             }
         }
     }
-}
-
-private fun skipsCatalogLookup(mediaType: String): Boolean {
-    return isGameSystem(mediaType) || mediaType == "Books"
 }
 
 class AlbumViewModelFactory(
@@ -233,6 +233,18 @@ class AlbumViewModel(application: Application, private val mediaType: String) : 
         }
     }
 
+    suspend fun delete(album: Album): String? = withContext(Dispatchers.IO) {
+        try {
+            db.libraryDao().delete(album)
+            null
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (exception: Exception) {
+            Log.e("AlbumView", "Could not delete entry", exception)
+            "Couldn't delete this entry. Try again."
+        }
+    }
+
     suspend fun search(mediaType: String, barcode: String, title: String, artist: String): SearchResult =
         withContext(Dispatchers.IO) {
             try {
@@ -258,7 +270,7 @@ class AlbumViewModel(application: Application, private val mediaType: String) : 
     }
 
     fun enrichIncomplete(albums: List<Album>) {
-        if (skipsCatalogLookup(mediaType)) return
+        if (mediaKind(mediaType) != MediaKind.Music) return
         albums.filter { it.needsCatalogDetails() }.forEach { album ->
             if (!enrichStarted.add(album.id)) return@forEach
             enriching.value = enriching.value.orEmpty() + album.id
@@ -295,6 +307,12 @@ private fun Album.withRelease(release: ScannedRelease): Album {
         barcode,
         coverUrl,
         recordLabel,
+        runtime,
+        castNames,
+        pageCount,
+        formatName,
+        contentRating,
+        playerCount,
     )
     copy.id = id
     val sameWork = release.album.isBlank() ||
@@ -303,11 +321,19 @@ private fun Album.withRelease(release: ScannedRelease): Album {
     copy.applyRelease(release)
     if (!sameWork) {
         if (release.artist.isBlank()) copy.artistName = ""
-        if (release.songs.isBlank()) copy.songsOnRecord = ""
         if (release.year.isBlank()) copy.yearPublished = ""
         if (release.genre.isBlank()) copy.genre = ""
         if (release.coverUrl.isBlank()) copy.coverUrl = ""
         if (release.label.isBlank()) copy.recordLabel = ""
+        if (mediaKind(copy.mediaType.orEmpty()) != MediaKind.Music || release.songs.isBlank()) {
+            copy.songsOnRecord = ""
+        }
+        if (release.runtime.isBlank()) copy.runtime = ""
+        if (release.cast.isBlank()) copy.castNames = ""
+        if (release.pages.isBlank()) copy.pageCount = ""
+        if (release.format.isBlank()) copy.formatName = ""
+        if (release.rating.isBlank()) copy.contentRating = ""
+        if (release.players.isBlank()) copy.playerCount = ""
     }
     return copy
 }
@@ -315,7 +341,9 @@ private fun Album.withRelease(release: ScannedRelease): Album {
 private fun Album.applyRelease(release: ScannedRelease): Album {
     if (release.album.isNotBlank()) albumName = release.album
     if (release.artist.isNotBlank()) artistName = release.artist
-    if (release.songs.isNotBlank()) songsOnRecord = release.songs
+    if (release.songs.isNotBlank() && mediaKind(mediaType.orEmpty()) == MediaKind.Music) {
+        songsOnRecord = release.songs
+    }
     if (release.year.isNotBlank()) yearPublished = release.year
     if (release.genre.isNotBlank()) {
         genre = release.genre
@@ -324,6 +352,12 @@ private fun Album.applyRelease(release: ScannedRelease): Album {
     }
     if (release.coverUrl.isNotBlank()) coverUrl = release.coverUrl
     if (release.label.isNotBlank()) recordLabel = release.label
+    if (release.runtime.isNotBlank()) runtime = release.runtime
+    if (release.cast.isNotBlank()) castNames = release.cast
+    if (release.pages.isNotBlank()) pageCount = release.pages
+    if (release.format.isNotBlank()) formatName = release.format
+    if (release.rating.isNotBlank()) contentRating = release.rating
+    if (release.players.isNotBlank()) playerCount = release.players
     return this
 }
 

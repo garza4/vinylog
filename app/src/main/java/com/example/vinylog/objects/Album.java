@@ -42,7 +42,31 @@ public class Album implements Serializable {
     @ColumnInfo(name = "record_label")
     String recordLabel;
 
-    public Album(String albumName, String artistName, String songsOnRecord, String yearPublished, String genre, String mediaType, String barcode, String coverUrl, String recordLabel) {
+    @NonNull
+    @ColumnInfo(name = "runtime")
+    String runtime;
+
+    @NonNull
+    @ColumnInfo(name = "cast_names")
+    String castNames;
+
+    @NonNull
+    @ColumnInfo(name = "page_count")
+    String pageCount;
+
+    @NonNull
+    @ColumnInfo(name = "format_name")
+    String formatName;
+
+    @NonNull
+    @ColumnInfo(name = "content_rating")
+    String contentRating;
+
+    @NonNull
+    @ColumnInfo(name = "player_count")
+    String playerCount;
+
+    public Album(String albumName, String artistName, String songsOnRecord, String yearPublished, String genre, String mediaType, String barcode, String coverUrl, String recordLabel, String runtime, String castNames, String pageCount, String formatName, String contentRating, String playerCount) {
         this.albumName = albumName == null ? "" : albumName;
         this.artistName = artistName == null ? "" : artistName;
         this.songsOnRecord = songsOnRecord == null ? "" : songsOnRecord;
@@ -52,6 +76,17 @@ public class Album implements Serializable {
         this.barcode = barcode == null ? "" : barcode;
         this.coverUrl = coverUrl == null ? "" : coverUrl;
         this.recordLabel = recordLabel == null ? "" : recordLabel;
+        this.runtime = runtime == null ? "" : runtime;
+        this.castNames = castNames == null ? "" : castNames;
+        this.pageCount = pageCount == null ? "" : pageCount;
+        this.formatName = formatName == null ? "" : formatName;
+        this.contentRating = contentRating == null ? "" : contentRating;
+        this.playerCount = playerCount == null ? "" : playerCount;
+    }
+
+    @Ignore
+    public Album(String albumName, String artistName, String songsOnRecord, String yearPublished, String genre, String mediaType, String barcode, String coverUrl, String recordLabel) {
+        this(albumName, artistName, songsOnRecord, yearPublished, genre, mediaType, barcode, coverUrl, recordLabel, "", "", "", "", "", "");
     }
 
     @Ignore
@@ -149,6 +184,60 @@ public class Album implements Serializable {
 
     public void setRecordLabel(String recordLabel) {
         this.recordLabel = recordLabel == null ? "" : recordLabel;
+    }
+
+    @NonNull
+    public String getRuntime() {
+        return runtime;
+    }
+
+    public void setRuntime(String runtime) {
+        this.runtime = runtime == null ? "" : runtime;
+    }
+
+    @NonNull
+    public String getCastNames() {
+        return castNames;
+    }
+
+    public void setCastNames(String castNames) {
+        this.castNames = castNames == null ? "" : castNames;
+    }
+
+    @NonNull
+    public String getPageCount() {
+        return pageCount;
+    }
+
+    public void setPageCount(String pageCount) {
+        this.pageCount = pageCount == null ? "" : pageCount;
+    }
+
+    @NonNull
+    public String getFormatName() {
+        return formatName;
+    }
+
+    public void setFormatName(String formatName) {
+        this.formatName = formatName == null ? "" : formatName;
+    }
+
+    @NonNull
+    public String getContentRating() {
+        return contentRating;
+    }
+
+    public void setContentRating(String contentRating) {
+        this.contentRating = contentRating == null ? "" : contentRating;
+    }
+
+    @NonNull
+    public String getPlayerCount() {
+        return playerCount;
+    }
+
+    public void setPlayerCount(String playerCount) {
+        this.playerCount = playerCount == null ? "" : playerCount;
     }
 
     @Override

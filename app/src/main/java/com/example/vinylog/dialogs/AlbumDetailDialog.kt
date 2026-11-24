@@ -15,8 +15,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,7 +44,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.example.vinylog.games.isGameSystem
+import com.example.vinylog.media.MediaKind
+import com.example.vinylog.media.creditLabel
+import com.example.vinylog.media.entryFields
+import com.example.vinylog.media.mediaKind
+import com.example.vinylog.media.valueOf
 import com.example.vinylog.objects.Album
 import com.example.vinylog.util.ReleaseLookup
 import com.example.vinylog.util.ScannedRelease
@@ -58,15 +64,29 @@ fun AlbumDetailDialog(
     onSave: suspend (Album) -> String?,
     onSearch: suspend (title: String, artist: String) -> SearchResult,
     onChoose: suspend (ScannedRelease) -> String?,
+    onDelete: suspend (Album) -> String?,
 ) {
+    val mediaType = album.mediaType.orEmpty()
     var mode by remember(album.id) { mutableStateOf("view") }
     var draft by remember(album.id) { mutableStateOf(album.toDraft()) }
     var titleQuery by remember(album.id) {
         mutableStateOf(
-            ReleaseLookup.cleanCommerceTitle(album.albumName.orEmpty()).ifBlank { album.albumName.orEmpty() },
+            ReleaseLookup.catalogQueryTitle(
+                album.albumName.orEmpty(),
+                album.artistName.orEmpty(),
+                mediaType,
+            ),
         )
     }
-    var artistQuery by remember(album.id) { mutableStateOf(album.artistName.orEmpty()) }
+    var artistQuery by remember(album.id) {
+        mutableStateOf(
+            ReleaseLookup.catalogQueryCredit(
+                album.albumName.orEmpty(),
+                album.artistName.orEmpty(),
+                mediaType,
+            ),
+        )
+    }
     var searchToken by remember(album.id) { mutableIntStateOf(0) }
     var searching by remember(album.id) { mutableStateOf(false) }
     var hits by remember(album.id) { mutableStateOf<List<ScannedRelease>>(emptyList()) }
@@ -74,8 +94,6 @@ fun AlbumDetailDialog(
     var busy by remember(album.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val scroll = rememberScrollState()
-    val songs = album.songsOnRecord.orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() }
-    val mediaType = album.mediaType.orEmpty()
 
     LaunchedEffect(mode) {
         scroll.scrollTo(0)
@@ -125,7 +143,7 @@ fun AlbumDetailDialog(
                             onDraftChange = { draft = it },
                             onSave = {
                                 if (busy) return@EditDetails
-                                if (draft.album.isBlank()) {
+                                if (draft.title.isBlank()) {
                                     note = "Enter a title before saving."
                                     return@EditDetails
                                 }
@@ -142,6 +160,35 @@ fun AlbumDetailDialog(
                                     ensureActive()
                                     busy = false
                                     if (failure == null) mode = "view" else note = failure
+                                }
+                            },
+                            onCancel = {
+                                if (!busy) {
+                                    note = ""
+                                    mode = "view"
+                                }
+                            },
+                        )
+
+                        "delete" -> DeleteConfirm(
+                            title = album.albumName.orEmpty().ifBlank { "Untitled" },
+                            note = note,
+                            busy = busy,
+                            onDelete = {
+                                if (busy) return@DeleteConfirm
+                                busy = true
+                                note = ""
+                                scope.launch {
+                                    val failure = try {
+                                        onDelete(album)
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (exception: Exception) {
+                                        "Couldn't delete this entry. Try again."
+                                    }
+                                    ensureActive()
+                                    busy = false
+                                    if (failure == null) onDismiss() else note = failure
                                 }
                             },
                             onCancel = {
@@ -207,20 +254,26 @@ fun AlbumDetailDialog(
                                 text = album.albumName.orEmpty().ifBlank { "Untitled" },
                                 style = MaterialTheme.typography.headlineSmall,
                             )
-                            DetailLine(personLabel(mediaType), album.artistName)
-                            DetailLine("Year", album.yearPublished)
-                            DetailLine(publisherLabel(mediaType), album.recordLabel)
-                            DetailLine("Genre", album.genre)
-                            DetailLine("Format", album.mediaType)
-                            DetailLine("Barcode", album.barcode)
-                            if (songs.isNotEmpty()) {
+                            entryFields(mediaType).forEach { field ->
+                                if (field.key == "title" || field.key == "cover" || field.multiline) return@forEach
+                                DetailLine(field.label, album.valueOf(field.key))
+                            }
+                            when (mediaKind(mediaType)) {
+                                MediaKind.Music -> DetailLine("Format", mediaType)
+                                MediaKind.Game -> DetailLine("Platform", mediaType)
+                                MediaKind.Movie, MediaKind.Book, MediaKind.Show -> Unit
+                            }
+                            entryFields(mediaType).filter { it.multiline }.forEach { field ->
+                                val lines = album.valueOf(field.key).lines().map { it.trim() }.filter { it.isNotEmpty() }
+                                if (lines.isEmpty()) return@forEach
                                 Text(
-                                    text = worksLabel(mediaType),
+                                    text = field.label,
                                     style = MaterialTheme.typography.titleMedium,
                                     modifier = Modifier.padding(top = 8.dp),
                                 )
-                                songs.forEachIndexed { index, title ->
-                                    Text(text = "${index + 1}. $title")
+                                lines.forEachIndexed { index, line ->
+                                    val prefix = if (field.key == "tracks") "${index + 1}. " else ""
+                                    Text(text = prefix + line)
                                 }
                             }
                             TextButton(
@@ -258,10 +311,50 @@ fun AlbumDetailDialog(
                             }) {
                                 Icon(Icons.Filled.Edit, contentDescription = "Edit details")
                             }
+                            IconButton(onClick = {
+                                note = ""
+                                mode = "delete"
+                            }) {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = "Delete entry",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DeleteConfirm(
+    title: String,
+    note: String,
+    busy: Boolean,
+    onDelete: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Text(text = "Delete this entry?", style = MaterialTheme.typography.titleLarge)
+    Text(text = "$title will be removed from this shelf.")
+    if (note.isNotBlank()) {
+        Text(text = note, color = MaterialTheme.colorScheme.error)
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        TextButton(
+            enabled = !busy,
+            onClick = onDelete,
+            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+        ) {
+            Text(if (busy) "Deleting…" else "Delete")
+        }
+        TextButton(enabled = !busy, onClick = onCancel) {
+            Text("Cancel")
         }
     }
 }
@@ -280,7 +373,7 @@ private fun EditDetails(
     if (draft.cover.isNotBlank()) {
         CoverImage(
             url = draft.cover,
-            title = draft.album,
+            title = draft.title,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(160.dp),
@@ -289,16 +382,7 @@ private fun EditDetails(
     if (note.isNotBlank()) {
         Text(text = note, color = MaterialTheme.colorScheme.error)
     }
-    DraftField("Title", draft.album) { onDraftChange(draft.copy(album = it)) }
-    DraftField(personLabel(mediaType), draft.artist) { onDraftChange(draft.copy(artist = it)) }
-    DraftField("Year", draft.year) { onDraftChange(draft.copy(year = it)) }
-    DraftField(publisherLabel(mediaType), draft.label) { onDraftChange(draft.copy(label = it)) }
-    DraftField("Genre", draft.genre) { onDraftChange(draft.copy(genre = it)) }
-    DraftField(worksLabel(mediaType), draft.songs, singleLine = false) {
-        onDraftChange(draft.copy(songs = it))
-    }
-    DraftField("Barcode", draft.barcode) { onDraftChange(draft.copy(barcode = it)) }
-    DraftField("Cover URL", draft.cover) { onDraftChange(draft.copy(cover = it)) }
+    MediaDraftFields(mediaType, draft, onDraftChange)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
@@ -333,7 +417,7 @@ private fun SearchCatalog(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     DraftField("Title", title, onValue = onTitle)
-    DraftField(personLabel(mediaType), artist, onValue = onArtist)
+    DraftField(creditLabel(mediaType), artist, onValue = onArtist)
     if (note.isNotBlank()) {
         Text(text = note, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -441,20 +525,3 @@ private fun DetailLine(label: String, value: String?) {
     }
 }
 
-private fun personLabel(mediaType: String): String = when {
-    mediaType == "Books" -> "Author"
-    mediaType == "Movies" -> "Director"
-    isGameSystem(mediaType) -> "Developer"
-    else -> "Artist"
-}
-
-private fun publisherLabel(mediaType: String): String = when {
-    mediaType == "Books" || isGameSystem(mediaType) -> "Publisher"
-    mediaType == "Movies" -> "Studio"
-    else -> "Label"
-}
-
-private fun worksLabel(mediaType: String): String = when {
-    mediaType == "Books" || mediaType == "Movies" || isGameSystem(mediaType) -> "Notes"
-    else -> "Songs"
-}

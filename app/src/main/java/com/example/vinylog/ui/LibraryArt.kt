@@ -333,5 +333,77 @@ fun Book(modifier: Modifier = Modifier.discSize()) {
     }
 }
 
+@Composable
+fun Television(modifier: Modifier = Modifier.discSize()) {
+    Canvas(modifier) {
+        val setW = size.minDimension * 0.86f
+        val setH = setW * 0.68f
+        val left = (size.width - setW) / 2f
+        val top = (size.height - setH) / 2f - setH * 0.08f
+        val radius = CornerRadius(setW * 0.06f, setW * 0.06f)
+
+        drawRoundRect(
+            color = Color.Black.copy(alpha = 0.28f),
+            topLeft = Offset(left + setW * 0.04f, top + setH * 0.06f),
+            size = Size(setW, setH),
+            cornerRadius = radius,
+        )
+        drawRoundRect(
+            color = Color(0xFF2A3038),
+            topLeft = Offset(left, top),
+            size = Size(setW, setH),
+            cornerRadius = radius,
+        )
+        val bezel = setW * 0.045f
+        val screenLeft = left + bezel
+        val screenTop = top + bezel
+        val screenW = setW - bezel * 2f
+        val screenH = setH - bezel * 2.4f
+        drawRoundRect(
+            brush = Brush.linearGradient(
+                colors = listOf(Color(0xFF1B3A4B), Color(0xFF0E2433), Color(0xFF16324A)),
+                start = Offset(screenLeft, screenTop),
+                end = Offset(screenLeft + screenW, screenTop + screenH),
+            ),
+            topLeft = Offset(screenLeft, screenTop),
+            size = Size(screenW, screenH),
+            cornerRadius = CornerRadius(setW * 0.03f, setW * 0.03f),
+        )
+        drawRect(
+            color = Color(0xFFE8F6FF).copy(alpha = 0.85f),
+            topLeft = Offset(screenLeft + screenW * 0.12f, screenTop + screenH * 0.38f),
+            size = Size(screenW * 0.46f, screenH * 0.08f),
+        )
+        drawRect(
+            color = Color.White.copy(alpha = 0.55f),
+            topLeft = Offset(screenLeft + screenW * 0.12f, screenTop + screenH * 0.54f),
+            size = Size(screenW * 0.28f, screenH * 0.06f),
+        )
+        drawCircle(
+            color = Color(0xFF8FE3A1),
+            radius = setW * 0.018f,
+            center = Offset(left + setW * 0.90f, top + setH * 0.90f),
+        )
+        val neckW = setW * 0.08f
+        val neckH = setH * 0.16f
+        val neckLeft = left + (setW - neckW) / 2f
+        val neckTop = top + setH - setH * 0.02f
+        drawRoundRect(
+            color = Color(0xFF1C2128),
+            topLeft = Offset(neckLeft, neckTop),
+            size = Size(neckW, neckH),
+            cornerRadius = CornerRadius(neckW * 0.2f, neckW * 0.2f),
+        )
+        val baseW = setW * 0.42f
+        val baseH = setH * 0.07f
+        drawRoundRect(
+            color = Color(0xFF1C2128),
+            topLeft = Offset(left + (setW - baseW) / 2f, neckTop + neckH * 0.72f),
+            size = Size(baseW, baseH),
+            cornerRadius = CornerRadius(baseH, baseH),
+        )
+    }
+}
+
 private fun Modifier.discSize(): Modifier =
     this.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true)

@@ -21,6 +21,12 @@ data class ScannedRelease(
     val label: String = "",
     val catalogId: String = "",
     val hint: String = "",
+    val runtime: String = "",
+    val cast: String = "",
+    val pages: String = "",
+    val format: String = "",
+    val rating: String = "",
+    val players: String = "",
 )
 
 sealed class LookupResult {
@@ -119,6 +125,17 @@ class ReleaseLookup(
         }
     }
 
+    fun lookupChoices(rawBarcode: String, mediaType: String): SearchResult {
+        val stored = rawBarcode.trim()
+        if (stored.isBlank()) return SearchResult.None
+        return when {
+            mediaType == "Books" -> lookupBookChoices(stored)
+            mediaType == "Movies" || mediaType == "TV Shows" || isGameSystem(mediaType) ->
+                lookupWorkChoices(stored, mediaType)
+            else -> lookupMusicChoices(stored)
+        }
+    }
+
     fun search(title: String, artist: String, mediaType: String, barcode: String): SearchResult {
         val cleanedTitle = title.trim()
         val cleanedArtist = artist.trim()
@@ -127,8 +144,9 @@ class ReleaseLookup(
         }
         return when {
             mediaType == "Books" -> searchBooks(cleanedTitle, cleanedArtist, barcode)
-            mediaType == "Movies" -> searchWikipedia(cleanedTitle, cleanedArtist, barcode, "film")
-            isGameSystem(mediaType) -> searchWikipedia(cleanedTitle, cleanedArtist, barcode, "video game")
+            mediaType == "Movies" -> searchWikipedia(workTitle(cleanedTitle, cleanedArtist), cleanedArtist, barcode, "film")
+            mediaType == "TV Shows" -> searchWikipedia(workTitle(cleanedTitle, cleanedArtist), cleanedArtist, barcode, "tv series")
+            isGameSystem(mediaType) -> searchWikipedia(workTitle(cleanedTitle, cleanedArtist), cleanedArtist, barcode, "video game")
             else -> searchMusic(cleanedTitle, cleanedArtist, barcode)
         }
     }
@@ -145,6 +163,12 @@ class ReleaseLookup(
                     val tracks = parseItunesTracks(fetch(itunesLookupUrl(id.removePrefix("itunes:"))))
                     if (tracks.isBlank()) release else release.copy(songs = tracks)
                 }
+                id.startsWith("wd:") -> enrichFromWikidata(release, id.removePrefix("wd:"))
+                id.startsWith("wiki:") -> {
+                    val qid = parseWikibaseItem(fetch(wikipediaPropsUrl(id.removePrefix("wiki:"))))
+                    if (qid.isBlank()) release else enrichFromWikidata(release, qid)
+                }
+                id.startsWith("ol:") -> enrichFromOpenLibrary(release, id.removePrefix("ol:"))
                 else -> release
             }
         } catch (cancelled: java.util.concurrent.CancellationException) {
@@ -152,6 +176,90 @@ class ReleaseLookup(
         } catch (exception: Exception) {
             release
         }
+    }
+
+    private fun lookupMusicChoices(barcode: String): SearchResult {
+        var sawResponse = false
+        var sawError = false
+        val hits = mutableListOf<ScannedRelease>()
+        for (code in barcodeCandidates(barcode)) {
+            try {
+                hits += parseSearchHits(fetch(barcodeSearchUrl(code)), barcode)
+                sawResponse = true
+            } catch (exception: Exception) {
+                sawError = true
+            }
+            if (hits.isNotEmpty()) break
+        }
+        if (hits.isNotEmpty()) return finishSearch(distinctReleases(hits), true, false)
+        val seed = try {
+            upcRelease(barcode)?.also { sawResponse = true }
+        } catch (exception: Exception) {
+            sawError = true
+            null
+        }
+        val title = cleanCommerceTitle(seed?.album.orEmpty())
+        val artist = seed?.artist.orEmpty().takeUnless { it.equals(seed?.label, ignoreCase = true) }.orEmpty()
+        if (title.isNotBlank() || artist.isNotBlank()) {
+            when (val searched = search(title, artist, "Vinyl", barcode)) {
+                is SearchResult.Hits -> if (searched.releases.isNotEmpty()) return searched
+                is SearchResult.Failed -> if (seed == null) return searched
+                SearchResult.None -> Unit
+            }
+        }
+        if (seed != null && (seed.album.isNotBlank() || seed.artist.isNotBlank())) {
+            return SearchResult.Hits(listOf(seed))
+        }
+        return finishSearch(emptyList(), sawResponse, sawError)
+    }
+
+    private fun lookupWorkChoices(barcode: String, mediaType: String): SearchResult {
+        val seed = try {
+            upcRelease(barcode)
+        } catch (exception: Exception) {
+            return SearchResult.Failed("Couldn't reach the catalog.")
+        }
+        if (seed == null || (seed.album.isBlank() && seed.artist.isBlank())) return SearchResult.None
+        return when (val searched = search(seed.album, seed.artist, mediaType, barcode)) {
+            is SearchResult.Hits -> if (searched.releases.isNotEmpty()) searched else SearchResult.Hits(listOf(seed))
+            SearchResult.None -> SearchResult.Hits(listOf(seed))
+            is SearchResult.Failed -> SearchResult.Hits(listOf(seed))
+        }
+    }
+
+    private fun lookupBookChoices(barcode: String): SearchResult {
+        var retail: ScannedRelease? = null
+        if (isbnCandidate(barcode) != null) {
+            when (val searched = search("", "", "Books", barcode)) {
+                is SearchResult.Hits -> {
+                    val editions = searched.releases.filter { it.catalogId.startsWith("ol:") }
+                    if (editions.isNotEmpty()) return SearchResult.Hits(editions)
+                    retail = searched.releases.firstOrNull()
+                }
+                is SearchResult.Failed -> return searched
+                SearchResult.None -> Unit
+            }
+        }
+        if (retail == null) {
+            retail = try {
+                upcRelease(barcode)
+            } catch (exception: Exception) {
+                return SearchResult.Failed("Couldn't reach the catalog.")
+            }
+        }
+        val title = cleanCommerceTitle(retail?.album.orEmpty())
+        val author = retail?.artist.orEmpty().takeUnless { it.equals(retail?.label, ignoreCase = true) }.orEmpty()
+        if (title.isNotBlank() || author.isNotBlank()) {
+            when (val searched = search(title, author, "Books", "")) {
+                is SearchResult.Hits -> if (searched.releases.isNotEmpty()) return searched
+                is SearchResult.Failed -> if (retail == null) return searched
+                SearchResult.None -> Unit
+            }
+        }
+        if (retail != null && (retail.album.isNotBlank() || retail.artist.isNotBlank())) {
+            return SearchResult.Hits(listOf(retail))
+        }
+        return SearchResult.None
     }
 
     private fun searchMusic(title: String, artist: String, barcode: String): SearchResult {
@@ -233,10 +341,11 @@ class ReleaseLookup(
         var sawResponse = false
         var sawError = false
         val hits = mutableListOf<ScannedRelease>()
-        val query = listOf(title, artist).filter { it.isNotBlank() }.joinToString(" ")
+        val query = title.trim().ifBlank { artist.trim() }
         if (query.isNotBlank()) {
             try {
-                hits += parseWikipedia(fetch(wikipediaUrl("$query $required")), required)
+                val found = parseWikipedia(fetch(wikipediaUrl("$query $required")), required)
+                hits += preferRelevant(found, title.trim().ifBlank { query }, artist)
                 sawResponse = true
             } catch (exception: Exception) {
                 sawError = true
@@ -253,6 +362,61 @@ class ReleaseLookup(
             }
         }
         return finishSearch(distinctReleases(hits), sawResponse, sawError)
+    }
+
+    private fun preferRelevant(
+        hits: List<ScannedRelease>,
+        title: String,
+        credit: String,
+    ): List<ScannedRelease> {
+        val wanted = normalizeTitle(title)
+        val person = credit.trim()
+        return hits.sortedWith(
+            compareBy(
+                { hit -> if (wanted.isNotBlank() && normalizeTitle(hit.album) == wanted) 0 else 1 },
+                { hit ->
+                    if (person.length < 3) {
+                        1
+                    } else if ("${hit.artist} ${hit.hint}".contains(person, ignoreCase = true)) {
+                        0
+                    } else {
+                        1
+                    }
+                },
+            ),
+        )
+    }
+
+    private fun enrichFromWikidata(release: ScannedRelease, qid: String): ScannedRelease {
+        val claimsJson = fetch(wikidataClaimsUrl(qid))
+        val ids = wikidataLabelIds(claimsJson)
+        val labelsJson = if (ids.isEmpty()) "" else try {
+            fetch(wikidataLabelsUrl(ids))
+        } catch (exception: Exception) {
+            ""
+        }
+        return mergeChoice(release, parseWikidataDetails(claimsJson, labelsJson))
+    }
+
+    private fun enrichFromOpenLibrary(release: ScannedRelease, isbn: String): ScannedRelease {
+        return mergeChoice(release, parseOpenLibraryEdition(fetch(openLibraryEditionUrl(isbn))))
+    }
+
+    private fun mergeChoice(current: ScannedRelease, extra: ScannedRelease?): ScannedRelease {
+        if (extra == null) return current
+        return current.copy(
+            artist = extra.artist.ifBlank { current.artist },
+            year = extra.year.ifBlank { current.year },
+            genre = extra.genre.ifBlank { current.genre },
+            coverUrl = current.coverUrl.ifBlank { extra.coverUrl },
+            label = extra.label.ifBlank { current.label },
+            runtime = extra.runtime.ifBlank { current.runtime },
+            cast = extra.cast.ifBlank { current.cast },
+            pages = extra.pages.ifBlank { current.pages },
+            format = extra.format.ifBlank { current.format },
+            rating = extra.rating.ifBlank { current.rating },
+            players = extra.players.ifBlank { current.players },
+        )
     }
 
     private fun upcRelease(barcode: String): ScannedRelease? {
@@ -304,7 +468,9 @@ class ReleaseLookup(
         val seen = linkedSetOf<String>()
         return releases.filter { release ->
             val key = normalizeTitle(release.album) + "|" +
-                release.artist.lowercase(Locale.US) + "|" + release.year
+                release.artist.lowercase(Locale.US) + "|" +
+                release.year + "|" +
+                release.catalogId
             seen.add(key)
         }
     }
@@ -353,11 +519,16 @@ class ReleaseLookup(
     companion object {
         const val USER_AGENT = "VinyLog/1.0 (com.example.vinylog)"
         private const val OPEN_LIBRARY_FIELDS =
-            "key,title,author_name,first_publish_year,publisher,cover_i,subject"
+            "key,title,author_name,first_publish_year,publisher,cover_i,subject,number_of_pages_median,isbn"
 
         fun searchUrl(barcode: String): String {
             val query = URLEncoder.encode("barcode:$barcode", Charsets.UTF_8.name())
             return "https://musicbrainz.org/ws/2/release/?query=$query&fmt=json&limit=1"
+        }
+
+        fun barcodeSearchUrl(barcode: String): String {
+            val query = URLEncoder.encode("barcode:$barcode", Charsets.UTF_8.name())
+            return "https://musicbrainz.org/ws/2/release/?query=$query&fmt=json&limit=8"
         }
 
         fun releaseUrl(releaseId: String): String {
@@ -395,8 +566,28 @@ class ReleaseLookup(
 
         fun wikipediaUrl(query: String): String {
             return "https://en.wikipedia.org/w/api.php?action=query&generator=search" +
-                "&gsrsearch=${encode(query)}&gsrlimit=8&prop=pageimages|pageterms" +
-                "&piprop=thumbnail&pithumbsize=500&wbptterms=description&format=json&redirects=1"
+                "&gsrsearch=${encode(query)}&gsrlimit=8&prop=pageimages|pageterms|pageprops" +
+                "&ppprop=wikibase_item&piprop=thumbnail&pithumbsize=500" +
+                "&wbptterms=description&format=json&redirects=1"
+        }
+
+        fun wikipediaPropsUrl(title: String): String {
+            return "https://en.wikipedia.org/w/api.php?action=query&titles=${encode(title)}" +
+                "&prop=pageprops&ppprop=wikibase_item&format=json&redirects=1"
+        }
+
+        fun wikidataClaimsUrl(qid: String): String {
+            return "https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encode(qid)}" +
+                "&props=claims&format=json"
+        }
+
+        fun wikidataLabelsUrl(ids: List<String>): String {
+            return "https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encode(ids.joinToString("|"))}" +
+                "&props=labels&languages=en&format=json"
+        }
+
+        fun openLibraryEditionUrl(isbn: String): String {
+            return "https://openlibrary.org/isbn/${encode(isbn)}.json"
         }
 
         fun isbnCandidate(raw: String): String? {
@@ -457,6 +648,36 @@ class ReleaseLookup(
             title = title.replace(Regex("\\s*\\((?:vinyl|lp|cd|cassette)\\)", RegexOption.IGNORE_CASE), "")
             title = title.replace(Regex("\\s+-\\s+(?:vinyl|lp|cd|cassette)\\s*$", RegexOption.IGNORE_CASE), "")
             return title.trim().trim('-', ' ')
+        }
+
+        fun catalogQueryTitle(title: String, credit: String, mediaType: String): String {
+            return if (usesWorkTitle(mediaType)) workTitle(title, credit) else {
+                cleanCommerceTitle(title).ifBlank { title.trim() }
+            }
+        }
+
+        fun catalogQueryCredit(title: String, credit: String, mediaType: String): String {
+            val trimmed = credit.trim()
+            if (!usesWorkTitle(mediaType)) return trimmed
+            val cleaned = cleanCommerceTitle(title).ifBlank { title.trim() }
+            return if (workTitle(title, credit) != cleaned) "" else trimmed
+        }
+
+        fun workTitle(title: String, credit: String): String {
+            var cleaned = cleanCommerceTitle(title).ifBlank { title.trim() }
+            cleaned = cleaned.replace(
+                Regex("""\s*\((?:blu-?ray|dvd|4k|uhd|ultra hd)\)""", RegexOption.IGNORE_CASE),
+                "",
+            )
+            cleaned = cleaned.replace(
+                Regex("""\s+-\s+(?:blu-?ray|dvd|4k|uhd)\s*$""", RegexOption.IGNORE_CASE),
+                "",
+            ).trim()
+            val parts = cleaned.split(Regex("""\s+-\s+"""), limit = 2).map { it.trim() }
+            if (parts.size == 2 && parts[1].isNotBlank() && sharesNamePrefix(credit, parts[0])) {
+                return parts[1]
+            }
+            return cleaned
         }
 
         fun parseSearchHit(json: String, barcode: String): ScannedRelease? {
@@ -530,15 +751,19 @@ class ReleaseLookup(
                     val coverId = doc.primitive("cover_i")
                     val yearDigits = doc.primitive("first_publish_year").take(4)
                     val year = if (yearDigits.length == 4 && yearDigits.all { it.isDigit() }) yearDigits else ""
+                    val isbn = doc.strings("isbn").firstNotNullOfOrNull { isbnCandidate(it) }.orEmpty()
+                    val pages = doc.primitive("number_of_pages_median").takeIf { it.all { ch -> ch.isDigit() } }.orEmpty()
                     ScannedRelease(
                         album = title,
                         artist = doc.strings("author_name").joinToString(", "),
                         songs = "",
                         year = year,
-                        genre = doc.strings("subject").firstOrNull().orEmpty(),
+                        genre = doc.strings("subject").firstOrNull { it.lowercase(Locale.US) !in SKIPPED_SUBJECTS }.orEmpty(),
                         barcode = barcode,
                         coverUrl = if (coverId.isBlank()) "" else "https://covers.openlibrary.org/b/id/$coverId-L.jpg",
                         label = doc.strings("publisher").firstOrNull().orEmpty(),
+                        catalogId = if (isbn.isBlank()) "" else "ol:$isbn",
+                        pages = pages,
                     )
                 }
             } catch (exception: Exception) {
@@ -552,12 +777,13 @@ class ReleaseLookup(
                 val hits = mutableListOf<Pair<Int, ScannedRelease>>()
                 for (entry in pages.entrySet()) {
                     val page = entry.value.asObject() ?: continue
-                    val description = page.get("terms").asObject()?.strings("description")?.firstOrNull().orEmpty()
-                    if (!description.contains(required, ignoreCase = true)) continue
                     val rawTitle = page.text("title")
                     if (rawTitle.isBlank()) continue
+                    val description = page.get("terms").asObject()?.strings("description")?.firstOrNull().orEmpty()
+                    if (!matchesWork(rawTitle, description, required)) continue
                     val (title, titleYear) = shortTitle(rawTitle, required)
                     val (person, year) = personAndYear(description)
+                    val qid = page.get("pageprops").asObject()?.text("wikibase_item").orEmpty()
                     hits += (page.primitive("index").toIntOrNull() ?: 999) to ScannedRelease(
                         album = title,
                         artist = person,
@@ -566,12 +792,86 @@ class ReleaseLookup(
                         genre = "",
                         barcode = "",
                         coverUrl = page.get("thumbnail").asObject()?.text("source").orEmpty(),
+                        catalogId = if (qid.isBlank()) "wiki:$rawTitle" else "wd:$qid",
                         hint = description,
                     )
                 }
                 hits.sortedBy { it.first }.map { it.second }
             } catch (exception: Exception) {
                 emptyList()
+            }
+        }
+
+        fun parseWikibaseItem(json: String): String {
+            return try {
+                val pages = parseObject(json)?.get("query").asObject()?.get("pages").asObject() ?: return ""
+                pages.entrySet().firstNotNullOfOrNull { entry ->
+                    entry.value.asObject()?.get("pageprops").asObject()?.text("wikibase_item")?.takeIf { it.isNotBlank() }
+                }.orEmpty()
+            } catch (exception: Exception) {
+                ""
+            }
+        }
+
+        fun wikidataLabelIds(claimsJson: String): List<String> {
+            val claims = wikidataClaims(claimsJson) ?: return emptyList()
+            val props = listOf("P57", "P178", "P170", "P272", "P123", "P449", "P161", "P136", "P852")
+            return props.flatMap { prop -> claimEntityIds(claims, prop) }.distinct().take(50)
+        }
+
+        fun parseWikidataDetails(claimsJson: String, labelsJson: String): ScannedRelease? {
+            val claims = wikidataClaims(claimsJson) ?: return null
+            val labels = parseWikidataLabels(labelsJson)
+            fun names(prop: String, limit: Int) = claimEntityIds(claims, prop).mapNotNull { labels[it] }.take(limit)
+            val directors = names("P57", 3)
+            val developers = names("P178", 3)
+            val creators = names("P170", 3)
+            val studios = names("P272", 2)
+            val publishers = names("P123", 2)
+            val networks = names("P449", 2)
+            val cast = names("P161", 8)
+            val genres = names("P136", 1)
+            val rating = names("P852", 1)
+            val credited = directors.ifEmpty { developers }
+            return ScannedRelease(
+                album = "",
+                artist = credited.ifEmpty { creators }.joinToString(", "),
+                songs = "",
+                year = (claimYears(claims, "P580") + claimYears(claims, "P577")).minOrNull().orEmpty(),
+                genre = genres.firstOrNull().orEmpty(),
+                barcode = "",
+                coverUrl = claimFile(claims, "P18"),
+                label = if (credited.isNotEmpty()) {
+                    studios.ifEmpty { publishers }.ifEmpty { networks }
+                } else {
+                    networks.ifEmpty { studios }.ifEmpty { publishers }
+                }.joinToString(", "),
+                runtime = claimRuntime(claims),
+                cast = cast.joinToString("\n"),
+                pages = claimAmount(claims, "P2437"),
+                rating = rating.firstOrNull().orEmpty(),
+                players = claimPlayers(claims).ifBlank { claimAmount(claims, "P1113") },
+            )
+        }
+
+        fun parseOpenLibraryEdition(json: String): ScannedRelease? {
+            return try {
+                val edition = parseObject(json) ?: return null
+                val pages = edition.primitive("number_of_pages").takeIf { it.all { ch -> ch.isDigit() } && it.isNotBlank() }.orEmpty()
+                val year = Regex("\\d{4}").find(edition.text("publish_date"))?.value.orEmpty()
+                ScannedRelease(
+                    album = edition.text("title"),
+                    artist = "",
+                    songs = "",
+                    year = year,
+                    genre = "",
+                    barcode = "",
+                    label = edition.strings("publishers").firstOrNull().orEmpty(),
+                    pages = pages,
+                    format = edition.text("physical_format"),
+                )
+            } catch (exception: Exception) {
+                null
             }
         }
 
@@ -849,28 +1149,186 @@ class ReleaseLookup(
             return URLEncoder.encode(value, Charsets.UTF_8.name())
         }
 
+        private fun usesWorkTitle(mediaType: String): Boolean {
+            return mediaType == "Movies" || mediaType == "TV Shows" || isGameSystem(mediaType)
+        }
+
+        private fun sharesNamePrefix(credit: String, head: String): Boolean {
+            val creditNorm = normalizeTitle(credit)
+            val headNorm = normalizeTitle(head)
+            if (headNorm.length < 3 || creditNorm.isBlank()) return false
+            return creditNorm == headNorm ||
+                creditNorm.startsWith("$headNorm ") ||
+                headNorm.startsWith("$creditNorm ")
+        }
+
+        private fun describesWork(description: String, required: String): Boolean {
+            return Regex("""\b${Regex.escape(required)}\b""", RegexOption.IGNORE_CASE)
+                .containsMatchIn(description)
+        }
+
+        private fun matchesWork(title: String, description: String, required: String): Boolean {
+            if (required != "tv series") return describesWork(description, required)
+            if (tvSeriesTitle.containsMatchIn(title)) return true
+            return Regex(
+                """\b(?:tv|television) series\b|\btelevision (?:program|sitcom|miniseries|show)\b|\bminiseries\b""",
+                RegexOption.IGNORE_CASE,
+            ).containsMatchIn(description)
+        }
+
+        private val tvSeriesTitle = Regex(
+            """\((?:(\d{4}) )?(?:[A-Za-z]+ )*(?:TV|television) series\)$""",
+            RegexOption.IGNORE_CASE,
+        )
+
         private fun shortTitle(raw: String, required: String): Pair<String, String> {
-            val pattern = if (required == "film") {
-                Regex("""^(.+?) \((\d{4}) film\)$""", RegexOption.IGNORE_CASE)
-            } else {
-                Regex("""^(.+?) \((?:(\d{4}) )?video game\)$""", RegexOption.IGNORE_CASE)
+            if (required == "tv series") {
+                val match = Regex(
+                    """^(.+?) \((?:(\d{4}) )?(?:[A-Za-z]+ )*(?:TV|television) series\)$""",
+                    RegexOption.IGNORE_CASE,
+                ).find(raw) ?: return raw to ""
+                return match.groupValues[1].trim() to match.groupValues[2]
             }
-            val match = pattern.find(raw) ?: return raw to ""
+            if (required == "film") {
+                val withYear = Regex(
+                    """^(.+?) \((\d{4})(?: [A-Za-z]+)* film\)$""",
+                    RegexOption.IGNORE_CASE,
+                ).find(raw)
+                if (withYear != null) return withYear.groupValues[1].trim() to withYear.groupValues[2]
+                val bare = Regex("""^(.+?) \(film\)$""", RegexOption.IGNORE_CASE).find(raw)
+                if (bare != null) return bare.groupValues[1].trim() to ""
+                return raw to ""
+            }
+            val match = Regex("""^(.+?) \((?:(\d{4}) )?video game\)$""", RegexOption.IGNORE_CASE).find(raw)
+                ?: return raw to ""
             return match.groupValues[1].trim() to match.groupValues.getOrNull(2).orEmpty()
         }
 
         private fun personAndYear(description: String): Pair<String, String> {
             val patterns = listOf(
-                Regex("""(\d{4}).*directed by ([^.]+)""", RegexOption.IGNORE_CASE),
-                Regex("""(\d{4}).*film by ([^.]+)""", RegexOption.IGNORE_CASE),
-                Regex("""(\d{4}).*developed by ([^.]+)""", RegexOption.IGNORE_CASE),
+                Regex("""(\d{4}).*directed by (.+)$""", RegexOption.IGNORE_CASE),
+                Regex("""(\d{4}).*film by (.+)$""", RegexOption.IGNORE_CASE),
+                Regex("""(\d{4}).*developed by (.+)$""", RegexOption.IGNORE_CASE),
+                Regex("""(\d{4}).*created by (.+)$""", RegexOption.IGNORE_CASE),
             )
             for (pattern in patterns) {
                 val match = pattern.find(description) ?: continue
-                return match.groupValues[2].trim() to match.groupValues[1]
+                return match.groupValues[2].trim().trimEnd('.') to match.groupValues[1]
             }
+            val created = Regex("""created by (.+)$""", RegexOption.IGNORE_CASE).find(description)
             val year = Regex("""\d{4}""").find(description)?.value.orEmpty()
+            if (created != null) return created.groupValues[1].trim().trimEnd('.') to year
             return "" to year
+        }
+
+        private val SKIPPED_SUBJECTS = setOf(
+            "accessible book",
+            "protected daisy",
+            "in library",
+            "lending library",
+            "internet archive wishlist",
+        )
+
+        private fun wikidataClaims(json: String): JsonObject? {
+            if (json.isBlank()) return null
+            val entities = parseObject(json)?.get("entities").asObject() ?: return null
+            val entity = entities.entrySet().firstOrNull()?.value?.asObject() ?: return null
+            return entity.get("claims").asObject()
+        }
+
+        private fun claimEntityIds(claims: JsonObject, prop: String): List<String> {
+            val statements = claims.array(prop) ?: return emptyList()
+            return statements.mapNotNull { element ->
+                val value = element.asObject()
+                    ?.get("mainsnak").asObject()
+                    ?.get("datavalue").asObject()
+                    ?.get("value").asObject()
+                    ?: return@mapNotNull null
+                value.text("id").takeIf { it.isNotBlank() }
+            }
+        }
+
+        private fun parseWikidataLabels(json: String): Map<String, String> {
+            if (json.isBlank()) return emptyMap()
+            val entities = parseObject(json)?.get("entities").asObject() ?: return emptyMap()
+            val labels = linkedMapOf<String, String>()
+            for (entry in entities.entrySet()) {
+                val name = entry.value.asObject()
+                    ?.get("labels").asObject()
+                    ?.get("en").asObject()
+                    ?.text("value")
+                    .orEmpty()
+                if (name.isNotBlank()) labels[entry.key] = name
+            }
+            return labels
+        }
+
+        private fun claimYears(claims: JsonObject, prop: String): List<String> {
+            val statements = claims.array(prop) ?: return emptyList()
+            return statements.mapNotNull { element ->
+                val time = element.asObject()
+                    ?.get("mainsnak").asObject()
+                    ?.get("datavalue").asObject()
+                    ?.get("value").asObject()
+                    ?.text("time")
+                    .orEmpty()
+                Regex("(\\d{4})").find(time)?.groupValues?.get(1)
+            }
+        }
+
+        private fun claimFile(claims: JsonObject, prop: String): String {
+            val value = claims.array(prop)?.firstObject()
+                ?.get("mainsnak").asObject()
+                ?.get("datavalue").asObject()
+                ?.get("value")
+            val filename = value?.takeIf { it.isJsonPrimitive && !it.isJsonNull }?.asString.orEmpty()
+            if (filename.isBlank()) return ""
+            val encoded = URLEncoder.encode(filename, Charsets.UTF_8.name()).replace("+", "%20")
+            return "https://commons.wikimedia.org/wiki/Special:FilePath/$encoded?width=500"
+        }
+
+        private fun claimAmount(claims: JsonObject, prop: String): String {
+            val raw = claims.array(prop)?.firstObject()
+                ?.get("mainsnak").asObject()
+                ?.get("datavalue").asObject()
+                ?.get("value").asObject()
+                ?.text("amount")
+                .orEmpty()
+                .removePrefix("+")
+                .substringBefore(".")
+            return raw.takeIf { it.isNotBlank() && it.all { ch -> ch.isDigit() } }.orEmpty()
+        }
+
+        private fun claimRuntime(claims: JsonObject): String {
+            val value = claims.array("P2047")?.firstObject()
+                ?.get("mainsnak").asObject()
+                ?.get("datavalue").asObject()
+                ?.get("value").asObject()
+                ?: return ""
+            val amount = value.text("amount").removePrefix("+").substringBefore(".").toIntOrNull() ?: return ""
+            val minutes = if (value.text("unit").endsWith("Q11574")) amount / 60 else amount
+            return if (minutes > 0) "$minutes min" else ""
+        }
+
+        private fun claimPlayers(claims: JsonObject): String {
+            fun amount(prop: String): String {
+                val raw = claims.array(prop)?.firstObject()
+                    ?.get("mainsnak").asObject()
+                    ?.get("datavalue").asObject()
+                    ?.get("value").asObject()
+                    ?.text("amount")
+                    .orEmpty()
+                    .removePrefix("+")
+                    .substringBefore(".")
+                return raw.takeIf { it.isNotBlank() && it.all { ch -> ch.isDigit() } }.orEmpty()
+            }
+            val min = amount("P1872")
+            val max = amount("P1873")
+            return when {
+                min.isNotBlank() && max.isNotBlank() && min != max -> "$min-$max"
+                max.isNotBlank() -> max
+                else -> min
+            }
         }
 
         private fun JsonObject.text(name: String): String {

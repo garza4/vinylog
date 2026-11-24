@@ -1,6 +1,7 @@
 package com.example.vinylog.dialogs
 
 import android.util.Log
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -24,15 +26,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.example.vinylog.activities.BarcodeScan
+import com.example.vinylog.media.MediaKind
+import com.example.vinylog.media.entryFields
+import com.example.vinylog.media.mediaKind
 import com.example.vinylog.objects.Album
 import com.example.vinylog.objects.database.AppDb
 import com.example.vinylog.util.BarcodeScanner
-import com.example.vinylog.util.LookupResult
 import com.example.vinylog.util.ReleaseLookup
+import com.example.vinylog.util.ScannedRelease
+import com.example.vinylog.util.SearchResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -40,15 +47,21 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 internal data class MediaDraft(
-    val album: String = "",
-    val artist: String = "",
-    val songs: String = "",
+    val title: String = "",
+    val person: String = "",
+    val company: String = "",
     val year: String = "",
     val genre: String = "",
+    val tracks: String = "",
+    val cast: String = "",
+    val runtime: String = "",
+    val pages: String = "",
+    val format: String = "",
+    val rating: String = "",
+    val players: String = "",
     val barcode: String = "",
-    val media: String = "",
     val cover: String = "",
-    val label: String = "",
+    val media: String = "",
 )
 
 @Composable
@@ -59,55 +72,47 @@ fun MediaSaveDialog(
     barcodeScanner: BarcodeScanner,
     scannedBarcode: BarcodeScan?,
     onBarcodeHandled: () -> Unit,
-    catalogLookup: Boolean = true,
 ) {
     var draft by remember(mediaType) { mutableStateOf(MediaDraft(media = mediaType)) }
     var choice by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
+    var choosing by remember { mutableStateOf(false) }
+    var hits by remember { mutableStateOf<List<ScannedRelease>>(emptyList()) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(scannedBarcode?.token) {
         val code = scannedBarcode?.barcode?.trim().orEmpty()
         if (code.isEmpty()) return@LaunchedEffect
-        if (!catalogLookup) {
-            draft = draft.copy(barcode = code, media = draft.media.ifBlank { mediaType })
-            note = "Enter the details, then save."
-            choice = "manual"
-            onBarcodeHandled()
-            return@LaunchedEffect
-        }
         choice = "lookup"
         note = ""
+        hits = emptyList()
+        choosing = false
+        draft = draft.copy(barcode = code, media = draft.media.ifBlank { mediaType })
         val result = try {
-            withContext(Dispatchers.IO) { ReleaseLookup().lookup(code) }
+            withContext(Dispatchers.IO) { ReleaseLookup().lookupChoices(code, mediaType) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (exception: Exception) {
             Log.e("MediaSaveDialog", "Barcode lookup failed", exception)
-            LookupResult.Failed("Couldn't reach the catalog.")
+            SearchResult.Failed("Couldn't reach the catalog.")
         }
         ensureActive()
-        draft = when (result) {
-            is LookupResult.Found -> draft.copy(
-                album = result.release.album.ifBlank { draft.album },
-                artist = result.release.artist,
-                songs = result.release.songs,
-                year = result.release.year,
-                genre = result.release.genre,
-                barcode = code,
-                media = draft.media.ifBlank { mediaType },
-                cover = result.release.coverUrl,
-                label = result.release.label,
-            )
-            is LookupResult.NotFound, is LookupResult.Failed -> draft.copy(barcode = code)
+        when (result) {
+            is SearchResult.Hits -> {
+                hits = result.releases
+                note = ""
+                choice = "pick"
+            }
+            SearchResult.None -> {
+                note = "No catalog match for this barcode. Enter the details yourself."
+                choice = "manual"
+            }
+            is SearchResult.Failed -> {
+                note = result.message
+                choice = "manual"
+            }
         }
-        note = when (result) {
-            is LookupResult.Found -> "Check the details, then save."
-            is LookupResult.NotFound -> "No catalog match for this barcode. Enter the details yourself."
-            is LookupResult.Failed -> "Couldn't reach the catalog. Enter the details yourself."
-        }
-        choice = "manual"
         onBarcodeHandled()
     }
 
@@ -137,6 +142,39 @@ fun MediaSaveDialog(
             },
         )
 
+        "pick" -> MatchPicker(
+            barcode = draft.barcode,
+            hits = hits,
+            note = note,
+            choosing = choosing,
+            onChoose = { hit ->
+                if (choosing) return@MatchPicker
+                choosing = true
+                note = ""
+                scope.launch {
+                    val full = try {
+                        withContext(Dispatchers.IO) { ReleaseLookup().loadChoice(hit) }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (exception: Exception) {
+                        hit
+                    }
+                    ensureActive()
+                    draft = draft.withChoice(full, mediaType)
+                    choosing = false
+                    note = "Check the details, then save."
+                    choice = "manual"
+                }
+            },
+            onManual = {
+                if (!choosing) {
+                    note = "Enter the details, then save."
+                    choice = "manual"
+                }
+            },
+            onDismiss = { if (!choosing) onDismiss() },
+        )
+
         "manual" -> EntryForm(
             draft = draft,
             note = note,
@@ -145,21 +183,11 @@ fun MediaSaveDialog(
             onDismiss = { if (!saving) onDismiss() },
             onSave = {
                 if (saving) return@EntryForm
-                if (draft.album.isBlank()) {
-                    note = "Enter an album or title before saving."
+                if (draft.title.isBlank()) {
+                    note = "Enter a title before saving."
                     return@EntryForm
                 }
-                val album = Album(
-                    draft.album.trim(),
-                    draft.artist.trim(),
-                    draft.songs.trim(),
-                    draft.year.trim(),
-                    draft.genre.trim(),
-                    draft.media.trim().ifBlank { mediaType },
-                    draft.barcode.trim(),
-                    draft.cover.trim(),
-                    draft.label.trim(),
-                )
+                val album = draft.toAlbum(id = 0, mediaType = draft.media.ifBlank { mediaType })
                 saving = true
                 scope.launch {
                     val failure = withContext(Dispatchers.IO) {
@@ -176,6 +204,104 @@ fun MediaSaveDialog(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun MatchPicker(
+    barcode: String,
+    hits: List<ScannedRelease>,
+    note: String,
+    choosing: Boolean,
+    onChoose: (ScannedRelease) -> Unit,
+    onManual: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 640.dp)
+                .padding(16.dp),
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(text = "Choose a match", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    text = "Pick the entry to use for this barcode.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (barcode.isNotBlank()) {
+                    Text(
+                        text = barcode,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (choosing) {
+                    Text(text = "Loading this match…")
+                }
+                if (note.isNotBlank()) {
+                    Text(text = note, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                hits.forEach { hit ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !choosing) { onChoose(hit) }
+                            .padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CoverImage(
+                            url = hit.coverUrl,
+                            title = hit.album,
+                            modifier = Modifier.size(56.dp),
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = hit.album.ifBlank { "Untitled" },
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            val meta = listOf(hit.artist, hit.year, hit.label)
+                                .map { it.trim() }
+                                .filter { it.isNotBlank() }
+                                .joinToString(" · ")
+                            if (meta.isNotBlank()) {
+                                Text(
+                                    text = meta,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (hit.hint.isNotBlank()) {
+                                Text(
+                                    text = hit.hint,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    TextButton(enabled = !choosing, onClick = onManual) {
+                        Text("Enter manually")
+                    }
+                    TextButton(enabled = !choosing, onClick = onDismiss) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -206,7 +332,7 @@ private fun EntryForm(
                 if (draft.cover.isNotBlank()) {
                     CoverImage(
                         url = draft.cover,
-                        title = draft.album,
+                        title = draft.title,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(160.dp),
@@ -215,13 +341,7 @@ private fun EntryForm(
                 if (note.isNotBlank()) {
                     Text(text = note, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                DraftField("Album", draft.album) { onDraftChange(draft.copy(album = it)) }
-                DraftField("Artist", draft.artist) { onDraftChange(draft.copy(artist = it)) }
-                DraftField("Year", draft.year) { onDraftChange(draft.copy(year = it)) }
-                DraftField("Genre", draft.genre) { onDraftChange(draft.copy(genre = it)) }
-                DraftField("Songs", draft.songs, singleLine = false) { onDraftChange(draft.copy(songs = it)) }
-                DraftField("Barcode", draft.barcode) { onDraftChange(draft.copy(barcode = it)) }
-                DraftField("Media", draft.media) { onDraftChange(draft.copy(media = it)) }
+                MediaDraftFields(draft.media, draft, onDraftChange)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
@@ -247,31 +367,116 @@ private fun EntryForm(
 }
 
 internal fun Album.toDraft(): MediaDraft = MediaDraft(
-    album = albumName.orEmpty(),
-    artist = artistName.orEmpty(),
-    songs = songsOnRecord.orEmpty(),
+    title = albumName.orEmpty(),
+    person = artistName.orEmpty(),
+    company = recordLabel.orEmpty(),
     year = yearPublished.orEmpty(),
     genre = genre.orEmpty(),
+    tracks = songsOnRecord.orEmpty(),
+    cast = castNames.orEmpty(),
+    runtime = runtime.orEmpty(),
+    pages = pageCount.orEmpty(),
+    format = formatName.orEmpty(),
+    rating = contentRating.orEmpty(),
+    players = playerCount.orEmpty(),
     barcode = barcode.orEmpty(),
-    media = mediaType.orEmpty(),
     cover = coverUrl.orEmpty(),
-    label = recordLabel.orEmpty(),
+    media = mediaType.orEmpty(),
 )
 
-internal fun Album.edited(draft: MediaDraft): Album {
+internal fun MediaDraft.toAlbum(id: Long, mediaType: String): Album {
     val updated = Album(
-        draft.album.trim(),
-        draft.artist.trim(),
-        draft.songs.trim(),
-        draft.year.trim(),
-        draft.genre.trim(),
-        mediaType.orEmpty(),
-        draft.barcode.trim(),
-        draft.cover.trim(),
-        draft.label.trim(),
+        title.trim(),
+        person.trim(),
+        tracks.trim(),
+        year.trim(),
+        genre.trim(),
+        mediaType,
+        barcode.trim(),
+        cover.trim(),
+        company.trim(),
+        runtime.trim(),
+        cast.trim(),
+        pages.trim(),
+        format.trim(),
+        rating.trim(),
+        players.trim(),
     )
     updated.id = id
     return updated
+}
+
+internal fun Album.edited(draft: MediaDraft): Album = draft.toAlbum(id, mediaType.orEmpty())
+
+private fun MediaDraft.withChoice(release: ScannedRelease, mediaType: String): MediaDraft {
+    return copy(
+        title = release.album.ifBlank { title },
+        person = release.artist,
+        company = release.label,
+        year = release.year,
+        genre = release.genre,
+        tracks = if (mediaKind(mediaType) == MediaKind.Music) release.songs else "",
+        cast = release.cast,
+        runtime = release.runtime,
+        pages = release.pages,
+        format = release.format,
+        rating = release.rating,
+        players = release.players,
+        barcode = barcode,
+        cover = release.coverUrl.ifBlank { cover },
+        media = media.ifBlank { mediaType },
+    )
+}
+
+internal fun MediaDraft.value(key: String): String = when (key) {
+    "title" -> title
+    "artist", "director", "author", "developer", "creator" -> person
+    "label", "studio", "publisher", "network" -> company
+    "year" -> year
+    "genre" -> genre
+    "tracks" -> tracks
+    "cast" -> cast
+    "runtime" -> runtime
+    "pages", "seasons" -> pages
+    "format" -> format
+    "rating" -> rating
+    "players", "episodes" -> players
+    "barcode" -> barcode
+    "cover" -> cover
+    else -> ""
+}
+
+internal fun MediaDraft.withValue(key: String, value: String): MediaDraft = when (key) {
+    "title" -> copy(title = value)
+    "artist", "director", "author", "developer", "creator" -> copy(person = value)
+    "label", "studio", "publisher", "network" -> copy(company = value)
+    "year" -> copy(year = value)
+    "genre" -> copy(genre = value)
+    "tracks" -> copy(tracks = value)
+    "cast" -> copy(cast = value)
+    "runtime" -> copy(runtime = value)
+    "pages", "seasons" -> copy(pages = value)
+    "format" -> copy(format = value)
+    "rating" -> copy(rating = value)
+    "players", "episodes" -> copy(players = value)
+    "barcode" -> copy(barcode = value)
+    "cover" -> copy(cover = value)
+    else -> this
+}
+
+@Composable
+internal fun MediaDraftFields(
+    mediaType: String,
+    draft: MediaDraft,
+    onDraftChange: (MediaDraft) -> Unit,
+) {
+    entryFields(mediaType).forEach { field ->
+        DraftField(
+            label = field.label,
+            value = draft.value(field.key),
+            singleLine = !field.multiline,
+        ) { onDraftChange(draft.withValue(field.key, it)) }
+    }
 }
 
 @Composable
