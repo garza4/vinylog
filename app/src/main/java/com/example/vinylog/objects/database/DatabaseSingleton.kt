@@ -2,6 +2,8 @@ package com.example.vinylog.objects.database
 
 import android.content.Context
 import androidx.room3.Room
+import androidx.room3.migration.Migration
+import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.AndroidSQLiteDriver
 import kotlinx.coroutines.Dispatchers
 
@@ -18,6 +20,7 @@ object DatabaseSingleton {
             )
                 // Version 1 keyed rows by album title and had no barcode column.
                 // Those installs could not store a scanned entry reliably.
+                .addMigrations(MIGRATION_2_3)
                 .fallbackToDestructiveMigration()
                 .setDriver(AndroidSQLiteDriver())
                 .setQueryCoroutineContext(Dispatchers.IO)
@@ -26,4 +29,9 @@ object DatabaseSingleton {
             instance
         }
     }
+}
+
+private val MIGRATION_2_3 = Migration(2, 3) { connection: SQLiteConnection ->
+    connection.prepare("ALTER TABLE albums ADD COLUMN cover_url TEXT NOT NULL DEFAULT ''").use { it.step() }
+    connection.prepare("ALTER TABLE albums ADD COLUMN record_label TEXT NOT NULL DEFAULT ''").use { it.step() }
 }

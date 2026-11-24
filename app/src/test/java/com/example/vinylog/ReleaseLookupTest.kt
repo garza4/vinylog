@@ -93,6 +93,43 @@ class ReleaseLookupTest {
     }
 
     @Test
+    fun parseUpcItem_readsThePerformerFromOfferTitlesAndKeepsTheLabel() {
+        val item = ReleaseLookup.parseUpcItem(UPC_JSON, "880882399016")
+        assertEquals("Invisible People", item?.album)
+        assertEquals("Chicano Batman", item?.artist)
+        assertEquals("ATO RECORDS", item?.label)
+        assertEquals("", item?.genre)
+        assertEquals("https://example.com/cover.jpg", item?.coverUrl)
+        assertEquals("", item?.songs)
+    }
+
+    @Test
+    fun lookup_fillsTracksYearAndCoverWhenTheBarcodeMissesMusicBrainz() {
+        val lookup = ReleaseLookup { url ->
+            when {
+                url.contains("musicbrainz.org/ws/2/release/?") && url.contains("barcode") -> """{"releases":[]}"""
+                url.contains("upcitemdb") -> UPC_JSON
+                url.contains("artistname") -> TITLE_SEARCH_JSON
+                url.contains("/release/35b1ad81") -> RELEASE_DETAIL_JSON
+                else -> error("unexpected $url")
+            }
+        }
+
+        val result = lookup.lookup("880882399016") as LookupResult.Found
+        assertEquals("Invisible People", result.release.album)
+        assertEquals("Chicano Batman", result.release.artist)
+        assertEquals("Color My Life\nBlank Slate", result.release.songs)
+        assertEquals("2020", result.release.year)
+        assertEquals("Soul", result.release.genre)
+        assertEquals("ATO Records", result.release.label)
+        assertEquals(
+            "https://coverartarchive.org/release-group/57e6bd02-b736-41c0-bc1f-a82d08b979d1/front-500",
+            result.release.coverUrl,
+        )
+        assertEquals("880882399016", result.release.barcode)
+    }
+
+    @Test
     fun album_keepsSongsBarcodeAndMediaForStorage() {
         val album = Album(
             "Kind of Blue",
@@ -125,6 +162,55 @@ class ReleaseLookupTest {
                 "tracks": [
                   {"title": "So What", "recording": {"genres": [{"name": "jazz", "count": 9}]}},
                   {"title": "Freddie Freeloader", "recording": {"genres": [{"name": "jazz", "count": 7}]}}
+                ]
+              }]
+            }
+        """
+
+        const val UPC_JSON = """
+            {
+              "code": "OK",
+              "items": [{
+                "title": "Invisible People [LP] - VINYL",
+                "description": "Find Chicano Batman - Invisible People - Vinyl by ATO RECORDS in Media.",
+                "brand": "ATO RECORDS",
+                "category": "Electronics > Video",
+                "images": ["https://example.com/cover.jpg"],
+                "offers": [
+                  {"title": "Chicano Batman - Invisible People - Vinyl"},
+                  {"title": "Chicano Batman - Invisible People (LP) (Vinyl)"}
+                ]
+              }]
+            }
+        """
+
+        const val TITLE_SEARCH_JSON = """
+            {
+              "releases": [{
+                "id": "35b1ad81-bb73-4dbf-8821-273c5f4544d4",
+                "title": "Invisible People",
+                "date": "2020-05-01",
+                "artist-credit": [{"name": "Chicano Batman", "joinphrase": ""}],
+                "release-group": {"id": "57e6bd02-b736-41c0-bc1f-a82d08b979d1"},
+                "label-info": [{"label": {"name": "ATO Records"}}]
+              }]
+            }
+        """
+
+        const val RELEASE_DETAIL_JSON = """
+            {
+              "id": "35b1ad81-bb73-4dbf-8821-273c5f4544d4",
+              "title": "Invisible People",
+              "date": "2020-05-01",
+              "artist-credit": [{"name": "Chicano Batman", "joinphrase": ""}],
+              "cover-art-archive": {"front": false},
+              "release-group": {"id": "57e6bd02-b736-41c0-bc1f-a82d08b979d1"},
+              "label-info": [{"label": {"name": "ATO Records"}}],
+              "tags": [{"name": "soul", "count": 5}, {"name": "rock", "count": 1}],
+              "media": [{
+                "tracks": [
+                  {"title": "Color My Life"},
+                  {"title": "Blank Slate"}
                 ]
               }]
             }

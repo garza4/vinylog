@@ -28,6 +28,7 @@
         <activity android:name=".activities.AlbumView">
 
         </activity>
+        <activity android:name=".activities.GameLibraryActivity" />
     </application>
 
 </manifest>

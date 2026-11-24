@@ -6,6 +6,7 @@ import androidx.room3.DaoReturnTypeConverters
 import androidx.room3.Delete
 import androidx.room3.Insert
 import androidx.room3.Query
+import androidx.room3.Update
 import androidx.room3.livedata.LiveDataDaoReturnTypeConverter
 import com.example.vinylog.objects.Album
 
@@ -29,6 +30,9 @@ interface LibraryDao {
 
     @Insert
     suspend fun insert(album: Album): Long
+
+    @Update
+    suspend fun update(album: Album)
 
     @Delete
     suspend fun delete(album: Album)

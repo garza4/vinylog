@@ -1,6 +1,7 @@
 package com.example.vinylog.objects;
 
 
+import androidx.annotation.NonNull;
 import androidx.room3.ColumnInfo;
 import androidx.room3.Entity;
 import androidx.room3.Ignore;
@@ -33,7 +34,15 @@ public class Album implements Serializable {
     @ColumnInfo(name = "barcode")
     String barcode;
 
-    public Album(String albumName, String artistName, String songsOnRecord, String yearPublished, String genre, String mediaType, String barcode) {
+    @NonNull
+    @ColumnInfo(name = "cover_url")
+    String coverUrl;
+
+    @NonNull
+    @ColumnInfo(name = "record_label")
+    String recordLabel;
+
+    public Album(String albumName, String artistName, String songsOnRecord, String yearPublished, String genre, String mediaType, String barcode, String coverUrl, String recordLabel) {
         this.albumName = albumName == null ? "" : albumName;
         this.artistName = artistName == null ? "" : artistName;
         this.songsOnRecord = songsOnRecord == null ? "" : songsOnRecord;
@@ -41,6 +50,13 @@ public class Album implements Serializable {
         this.genre = genre == null ? "" : genre;
         this.mediaType = mediaType == null ? "" : mediaType;
         this.barcode = barcode == null ? "" : barcode;
+        this.coverUrl = coverUrl == null ? "" : coverUrl;
+        this.recordLabel = recordLabel == null ? "" : recordLabel;
+    }
+
+    @Ignore
+    public Album(String albumName, String artistName, String songsOnRecord, String yearPublished, String genre, String mediaType, String barcode) {
+        this(albumName, artistName, songsOnRecord, yearPublished, genre, mediaType, barcode, "", "");
     }
 
     @Ignore
@@ -115,6 +131,24 @@ public class Album implements Serializable {
 
     public void setBarcode(String barcode) {
         this.barcode = barcode == null ? "" : barcode;
+    }
+
+    @NonNull
+    public String getCoverUrl() {
+        return coverUrl;
+    }
+
+    public void setCoverUrl(String coverUrl) {
+        this.coverUrl = coverUrl == null ? "" : coverUrl;
+    }
+
+    @NonNull
+    public String getRecordLabel() {
+        return recordLabel;
+    }
+
+    public void setRecordLabel(String recordLabel) {
+        this.recordLabel = recordLabel == null ? "" : recordLabel;
     }
 
     @Override

@@ -4,15 +4,18 @@ import android.app.Application
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.HorizontalDivider
@@ -22,23 +25,36 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.example.vinylog.dialogs.AlbumDetailDialog
+import com.example.vinylog.dialogs.CoverImage
 import com.example.vinylog.dialogs.MediaSaveDialog
+import com.example.vinylog.games.isGameSystem
 import com.example.vinylog.objects.Album
 import com.example.vinylog.objects.database.DatabaseSingleton
 import com.example.vinylog.ui.theme.VinyLogTheme
 import com.example.vinylog.util.BarcodeScanner
+import com.example.vinylog.util.LookupResult
+import com.example.vinylog.util.ReleaseLookup
+import com.example.vinylog.util.ScannedRelease
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class BarcodeScan(val barcode: String, val token: Long)
 
@@ -58,6 +74,7 @@ class AlbumView : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         val db = DatabaseSingleton.getDatabase(applicationContext)
         barcodeScanner = BarcodeScanner(this)
         // Register before the activity is started so a scan result still arrives
@@ -101,23 +118,45 @@ class AlbumView : ComponentActivity() {
                                     barcodeScanner = barcodeScanner,
                                     scannedBarcode = scannedBarcode,
                                     onBarcodeHandled = { albumViewModel.consumeBarcode() },
+                                    catalogLookup = !isGameSystem(mediaType),
+                                )
+                            }
+                            if (isGameSystem(mediaType)) {
+                                Text(
+                                    text = mediaType,
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    modifier = Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp),
                                 )
                             }
                             val albums by albumViewModel.albums.observeAsState(emptyList())
+                            val enriching by albumViewModel.enriching.observeAsState(emptySet())
+                            var selectedId by rememberSaveable { mutableStateOf<Long?>(null) }
+                            val selected = albums.firstOrNull { it.id == selectedId }
+                            LaunchedEffect(albums.map { it.id to it.needsCatalogDetails() }) {
+                                albumViewModel.enrichIncomplete(albums)
+                            }
+                            if (selected != null) {
+                                AlbumDetailDialog(
+                                    album = selected,
+                                    onDismiss = { selectedId = null },
+                                )
+                            }
                             if (albums.isEmpty()) {
                                 Text(
-                                    text = "No entries yet. Tap + to scan a barcode or add one.",
+                                    text = if (isGameSystem(mediaType)) {
+                                        "No games yet. Tap + to scan a barcode or add one."
+                                    } else {
+                                        "No entries yet. Tap + to scan a barcode or add one."
+                                    },
                                     modifier = Modifier.padding(16.dp),
                                 )
                             }
-                            LazyVerticalGrid(
-                                columns = GridCells.Adaptive(minSize = 30.dp),
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                items(albums, key = { it.id }, span = { GridItemSpan(maxLineSpan) }) { album ->
-                                    Text(
-                                        text = album.toString(),
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            LazyColumn(modifier = Modifier.weight(1f)) {
+                                items(albums, key = { it.id }) { album ->
+                                    AlbumRow(
+                                        album = album,
+                                        enriching = album.id in enriching,
+                                        onClick = { selectedId = album.id },
                                     )
                                     HorizontalDivider()
                                 }
@@ -143,10 +182,12 @@ class AlbumViewModelFactory(
     }
 }
 
-class AlbumViewModel(application: Application, mediaType: String) : ViewModel() {
+class AlbumViewModel(application: Application, private val mediaType: String) : ViewModel() {
     private val db = DatabaseSingleton.getDatabase(application)
     val albums: LiveData<List<Album>> = db.libraryDao().getAllByMediaType(mediaType)
     val scannedBarcode = MutableLiveData<BarcodeScan?>(null)
+    val enriching = MutableLiveData<Set<Long>>(emptySet())
+    private val enrichStarted = mutableSetOf<Long>()
 
     fun onBarcodeScanned(barcode: String) {
         val trimmed = barcode.trim()
@@ -156,5 +197,86 @@ class AlbumViewModel(application: Application, mediaType: String) : ViewModel() 
 
     fun consumeBarcode() {
         scannedBarcode.value = null
+    }
+
+    fun enrichIncomplete(albums: List<Album>) {
+        if (isGameSystem(mediaType)) return
+        albums.filter { it.needsCatalogDetails() }.forEach { album ->
+            if (!enrichStarted.add(album.id)) return@forEach
+            enriching.value = enriching.value.orEmpty() + album.id
+            viewModelScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    try {
+                        ReleaseLookup().lookup(album.barcode.orEmpty())
+                    } catch (exception: Exception) {
+                        LookupResult.Failed("Couldn't reach the catalog.")
+                    }
+                }
+                if (result is LookupResult.Found) {
+                    db.libraryDao().update(album.applyRelease(result.release))
+                }
+                enriching.value = enriching.value.orEmpty() - album.id
+            }
+        }
+    }
+}
+
+private fun Album.needsCatalogDetails(): Boolean {
+    if (barcode.isNullOrBlank()) return false
+    return songsOnRecord.isNullOrBlank() || yearPublished.isNullOrBlank() || coverUrl.isNullOrBlank()
+}
+
+private fun Album.applyRelease(release: ScannedRelease): Album {
+    if (release.album.isNotBlank()) albumName = release.album
+    if (release.artist.isNotBlank()) artistName = release.artist
+    if (release.songs.isNotBlank()) songsOnRecord = release.songs
+    if (release.year.isNotBlank()) yearPublished = release.year
+    if (release.genre.isNotBlank()) {
+        genre = release.genre
+    } else if (genre.orEmpty().contains('>')) {
+        genre = ""
+    }
+    if (release.coverUrl.isNotBlank()) coverUrl = release.coverUrl
+    if (release.label.isNotBlank()) recordLabel = release.label
+    return this
+}
+
+@Composable
+private fun AlbumRow(
+    album: Album,
+    enriching: Boolean,
+    onClick: () -> Unit,
+) {
+    val subtitle = listOf(album.artistName.orEmpty(), album.yearPublished.orEmpty())
+        .filter { it.isNotBlank() }
+        .joinToString(" · ")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        CoverImage(
+            url = album.coverUrl.orEmpty(),
+            title = album.albumName.orEmpty(),
+            modifier = Modifier.size(72.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = album.albumName.orEmpty().ifBlank { "Untitled" },
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = when {
+                    enriching -> "Looking up artist, year, and tracks…"
+                    subtitle.isNotBlank() -> subtitle
+                    else -> "No details yet"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

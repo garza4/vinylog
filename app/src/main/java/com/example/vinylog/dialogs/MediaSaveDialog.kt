@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -46,6 +47,8 @@ private data class MediaDraft(
     val genre: String = "",
     val barcode: String = "",
     val media: String = "",
+    val cover: String = "",
+    val label: String = "",
 )
 
 @Composable
@@ -56,6 +59,7 @@ fun MediaSaveDialog(
     barcodeScanner: BarcodeScanner,
     scannedBarcode: BarcodeScan?,
     onBarcodeHandled: () -> Unit,
+    catalogLookup: Boolean = true,
 ) {
     var draft by remember(mediaType) { mutableStateOf(MediaDraft(media = mediaType)) }
     var choice by remember { mutableStateOf("") }
@@ -66,6 +70,13 @@ fun MediaSaveDialog(
     LaunchedEffect(scannedBarcode?.token) {
         val code = scannedBarcode?.barcode?.trim().orEmpty()
         if (code.isEmpty()) return@LaunchedEffect
+        if (!catalogLookup) {
+            draft = draft.copy(barcode = code, media = draft.media.ifBlank { mediaType })
+            note = "Enter the game details, then save."
+            choice = "manual"
+            onBarcodeHandled()
+            return@LaunchedEffect
+        }
         choice = "lookup"
         note = ""
         val result = try {
@@ -86,6 +97,8 @@ fun MediaSaveDialog(
                 genre = result.release.genre,
                 barcode = code,
                 media = draft.media.ifBlank { mediaType },
+                cover = result.release.coverUrl,
+                label = result.release.label,
             )
             is LookupResult.NotFound, is LookupResult.Failed -> draft.copy(barcode = code)
         }
@@ -144,6 +157,8 @@ fun MediaSaveDialog(
                     draft.genre.trim(),
                     draft.media.trim().ifBlank { mediaType },
                     draft.barcode.trim(),
+                    draft.cover.trim(),
+                    draft.label.trim(),
                 )
                 saving = true
                 scope.launch {
@@ -188,6 +203,15 @@ private fun EntryForm(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(text = "Save entry", style = MaterialTheme.typography.titleLarge)
+                if (draft.cover.isNotBlank()) {
+                    CoverImage(
+                        url = draft.cover,
+                        title = draft.album,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp),
+                    )
+                }
                 if (note.isNotBlank()) {
                     Text(text = note, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

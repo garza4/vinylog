@@ -7,7 +7,7 @@ import androidx.room3.livedata.LiveDataDaoReturnTypeConverter
 import com.example.vinylog.objects.Album
 import com.example.vinylog.objects.dao.LibraryDao
 
-@Database(entities = [Album::class], version = 2, exportSchema = false)
+@Database(entities = [Album::class], version = 3, exportSchema = false)
 @DaoReturnTypeConverters(LiveDataDaoReturnTypeConverter::class)
 abstract class AppDb : RoomDatabase() {
     abstract fun libraryDao(): LibraryDao
