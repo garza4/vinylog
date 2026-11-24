@@ -15,7 +15,9 @@ For vinyl, CDs, and movies, a barcode is looked up in this order:
 3. MusicBrainz again, by album and artist
 4. iTunes, for any tracks, year, or cover still missing
 
-Shelves that already have a barcode but no tracks, year, or cover are filled in when that shelf opens. Video game and book barcodes are saved as entered and are not sent through this lookup.
+Shelves that already have a barcode but no tracks, year, or cover are filled in when that shelf opens. Video game and book barcodes are saved as entered and are not looked up automatically.
+
+Open an entry to see its details. The pencil at the top right edits the saved fields. Search finds other catalog matches, and the one you pick replaces the entry's details. Vinyl and CDs search MusicBrainz and iTunes. Movies and games search Wikipedia. Books search Open Library.
 
 Entries are stored in a Room database named `library`.
 

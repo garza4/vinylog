@@ -39,7 +39,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private data class MediaDraft(
+internal data class MediaDraft(
     val album: String = "",
     val artist: String = "",
     val songs: String = "",
@@ -246,8 +246,36 @@ private fun EntryForm(
     }
 }
 
+internal fun Album.toDraft(): MediaDraft = MediaDraft(
+    album = albumName.orEmpty(),
+    artist = artistName.orEmpty(),
+    songs = songsOnRecord.orEmpty(),
+    year = yearPublished.orEmpty(),
+    genre = genre.orEmpty(),
+    barcode = barcode.orEmpty(),
+    media = mediaType.orEmpty(),
+    cover = coverUrl.orEmpty(),
+    label = recordLabel.orEmpty(),
+)
+
+internal fun Album.edited(draft: MediaDraft): Album {
+    val updated = Album(
+        draft.album.trim(),
+        draft.artist.trim(),
+        draft.songs.trim(),
+        draft.year.trim(),
+        draft.genre.trim(),
+        mediaType.orEmpty(),
+        draft.barcode.trim(),
+        draft.cover.trim(),
+        draft.label.trim(),
+    )
+    updated.id = id
+    return updated
+}
+
 @Composable
-private fun DraftField(
+internal fun DraftField(
     label: String,
     value: String,
     singleLine: Boolean = true,

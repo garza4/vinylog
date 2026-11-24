@@ -1,8 +1,12 @@
 package com.example.vinylog
 
+import com.example.vinylog.dialogs.edited
+import com.example.vinylog.dialogs.toDraft
 import com.example.vinylog.objects.Album
 import com.example.vinylog.util.LookupResult
 import com.example.vinylog.util.ReleaseLookup
+import com.example.vinylog.util.ScannedRelease
+import com.example.vinylog.util.SearchResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -130,6 +134,117 @@ class ReleaseLookupTest {
     }
 
     @Test
+    fun search_listsEachPressingAndBorrowsTheItunesCover() {
+        val fetched = mutableListOf<String>()
+        val lookup = ReleaseLookup { url ->
+            fetched += url
+            when {
+                url.contains("musicbrainz.org") -> TWO_PRESSINGS_JSON
+                url.contains("itunes.apple.com/search") -> ITUNES_ALBUMS_JSON
+                else -> error("unexpected $url")
+            }
+        }
+
+        val result = lookup.search("Invisible People", "Chicano Batman", "Vinyl", "880882399016") as SearchResult.Hits
+        assertEquals(2, result.releases.size)
+        assertEquals("mb:aaa", result.releases[0].catalogId)
+        assertEquals("mb:bbb", result.releases[1].catalogId)
+        assertEquals("CD · US", result.releases[0].hint)
+        assertEquals("Vinyl · GB", result.releases[1].hint)
+        assertEquals("https://example.com/600x600bb.jpg", result.releases[0].coverUrl)
+        assertEquals("https://example.com/600x600bb.jpg", result.releases[1].coverUrl)
+        assertTrue(fetched.none { it.contains("wikipedia.org") || it.contains("openlibrary.org") })
+    }
+
+    @Test
+    fun loadChoice_fetchesTracksForTheSelectedRelease() {
+        val lookup = ReleaseLookup { url ->
+            if (url.contains("/release/aaa")) RELEASE_JSON else error("unexpected $url")
+        }
+        val full = lookup.loadChoice(
+            ScannedRelease(
+                album = "Kind of Blue",
+                artist = "Miles Davis",
+                songs = "",
+                year = "1987",
+                genre = "",
+                barcode = "074644057928",
+                catalogId = "mb:aaa",
+            ),
+        )
+        assertEquals("So What\nFreddie Freeloader", full.songs)
+        assertEquals("074644057928", full.barcode)
+    }
+
+    @Test
+    fun search_reportsAFailureWhenTheCatalogIsUnreachable() {
+        val lookup = ReleaseLookup { throw java.io.IOException("offline") }
+        val result = lookup.search("Kind of Blue", "Miles Davis", "Vinyl", "")
+        assertTrue(result is SearchResult.Failed)
+    }
+
+    @Test
+    fun search_usesOpenLibraryForBooks() {
+        val fetched = mutableListOf<String>()
+        val lookup = ReleaseLookup { url ->
+            fetched += url
+            """{"docs":[{"title":"The Hobbit","author_name":["J.R.R. Tolkien"],"first_publish_year":1937,"publisher":["Allen & Unwin"],"cover_i":99,"subject":["Fantasy"]}]}"""
+        }
+
+        val result = lookup.search("The Hobbit", "Tolkien", "Books", "") as SearchResult.Hits
+        assertEquals("The Hobbit", result.releases[0].album)
+        assertEquals("J.R.R. Tolkien", result.releases[0].artist)
+        assertEquals("1937", result.releases[0].year)
+        assertEquals("Fantasy", result.releases[0].genre)
+        assertEquals("Allen & Unwin", result.releases[0].label)
+        assertEquals("https://covers.openlibrary.org/b/id/99-L.jpg", result.releases[0].coverUrl)
+        assertTrue(fetched.all { it.contains("openlibrary.org") })
+    }
+
+    @Test
+    fun search_usesWikipediaForMoviesAndSkipsUnrelatedPages() {
+        val lookup = ReleaseLookup { url ->
+            assertTrue(url.contains("en.wikipedia.org"))
+            WIKI_FILM_JSON
+        }
+
+        val result = lookup.search("The Thing", "", "Movies", "") as SearchResult.Hits
+        assertEquals(1, result.releases.size)
+        assertEquals("The Thing", result.releases[0].album)
+        assertEquals("John Carpenter", result.releases[0].artist)
+        assertEquals("1982", result.releases[0].year)
+        assertEquals("https://example.com/thing.jpg", result.releases[0].coverUrl)
+    }
+
+    @Test
+    fun search_usesWikipediaForGames() {
+        val lookup = ReleaseLookup { url ->
+            assertTrue(url.contains("video+game"))
+            WIKI_GAME_JSON
+        }
+
+        val result = lookup.search("Tears of the Kingdom", "", "Nintendo Switch", "") as SearchResult.Hits
+        assertEquals(1, result.releases.size)
+        assertEquals("The Legend of Zelda: Tears of the Kingdom", result.releases[0].album)
+        assertEquals("Nintendo", result.releases[0].artist)
+        assertEquals("2023", result.releases[0].year)
+    }
+
+    @Test
+    fun edited_keepsTheRowIdAndMediaType() {
+        val album = Album("Old", "A", "track", "1999", "Jazz", "Books", "111", "https://cover", "Label")
+        album.id = 4
+        val updated = album.edited(album.toDraft().copy(album = "New", artist = "B", songs = ""))
+        assertEquals(4L, updated.id)
+        assertEquals("Books", updated.mediaType)
+        assertEquals("New", updated.albumName)
+        assertEquals("B", updated.artistName)
+        assertEquals("", updated.songsOnRecord)
+        assertEquals("Old", album.albumName)
+        assertEquals("111", updated.barcode)
+    }
+
+    @Test
     fun album_keepsSongsBarcodeAndMediaForStorage() {
         val album = Album(
             "Kind of Blue",
@@ -195,6 +310,40 @@ class ReleaseLookupTest {
                 "label-info": [{"label": {"name": "ATO Records"}}]
               }]
             }
+        """
+
+        const val TWO_PRESSINGS_JSON = """
+            {"releases":[
+              {"id":"aaa","title":"Invisible People","date":"2020-05-01","country":"US","artist-credit":[{"name":"Chicano Batman","joinphrase":""}],"media":[{"format":"CD","track-count":12}]},
+              {"id":"bbb","title":"Invisible People","date":"2020-05-01","country":"GB","artist-credit":[{"name":"Chicano Batman","joinphrase":""}],"media":[{"format":"Vinyl","track-count":12}]}
+            ]}
+        """
+
+        const val ITUNES_ALBUMS_JSON = """
+            {"results":[{
+              "wrapperType":"collection",
+              "collectionType":"Album",
+              "collectionName":"Invisible People",
+              "artistName":"Chicano Batman",
+              "collectionId":1498550615,
+              "releaseDate":"2020-05-01T07:00:00Z",
+              "primaryGenreName":"Alternative",
+              "artworkUrl100":"https://example.com/100x100bb.jpg"
+            }]}
+        """
+
+        const val WIKI_FILM_JSON = """
+            {"query":{"pages":{
+              "1":{"index":2,"title":"Thing (The Thing)","terms":{"description":["fictional character"]}},
+              "2":{"index":1,"title":"The Thing (1982 film)","terms":{"description":["1982 film directed by John Carpenter"]},"thumbnail":{"source":"https://example.com/thing.jpg"}}
+            }}}
+        """
+
+        const val WIKI_GAME_JSON = """
+            {"query":{"pages":{
+              "1":{"index":2,"title":"List of characters","terms":{"description":["Wikimedia list article"]}},
+              "2":{"index":1,"title":"The Legend of Zelda: Tears of the Kingdom","terms":{"description":["2023 video game developed by Nintendo"]}}
+            }}}
         """
 
         const val RELEASE_DETAIL_JSON = """

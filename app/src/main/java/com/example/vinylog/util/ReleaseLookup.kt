@@ -1,5 +1,6 @@
 package com.example.vinylog.util
 
+import com.example.vinylog.games.isGameSystem
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -18,12 +19,20 @@ data class ScannedRelease(
     val barcode: String,
     val coverUrl: String = "",
     val label: String = "",
+    val catalogId: String = "",
+    val hint: String = "",
 )
 
 sealed class LookupResult {
     data class Found(val release: ScannedRelease) : LookupResult()
     data object NotFound : LookupResult()
     data class Failed(val message: String) : LookupResult()
+}
+
+sealed class SearchResult {
+    data class Hits(val releases: List<ScannedRelease>) : SearchResult()
+    data object None : SearchResult()
+    data class Failed(val message: String) : SearchResult()
 }
 
 /**
@@ -110,6 +119,196 @@ class ReleaseLookup(
         }
     }
 
+    fun search(title: String, artist: String, mediaType: String, barcode: String): SearchResult {
+        val cleanedTitle = title.trim()
+        val cleanedArtist = artist.trim()
+        if (cleanedTitle.isBlank() && cleanedArtist.isBlank() && barcode.isBlank()) {
+            return SearchResult.None
+        }
+        return when {
+            mediaType == "Books" -> searchBooks(cleanedTitle, cleanedArtist, barcode)
+            mediaType == "Movies" -> searchWikipedia(cleanedTitle, cleanedArtist, barcode, "film")
+            isGameSystem(mediaType) -> searchWikipedia(cleanedTitle, cleanedArtist, barcode, "video game")
+            else -> searchMusic(cleanedTitle, cleanedArtist, barcode)
+        }
+    }
+
+    fun loadChoice(release: ScannedRelease): ScannedRelease {
+        val id = release.catalogId
+        return try {
+            when {
+                id.startsWith("mb:") -> {
+                    val detailed = parseRelease(fetch(releaseUrl(id.removePrefix("mb:"))), release.barcode)
+                    mergeReleases(detailed, release) ?: release
+                }
+                id.startsWith("itunes:") && release.songs.isBlank() -> {
+                    val tracks = parseItunesTracks(fetch(itunesLookupUrl(id.removePrefix("itunes:"))))
+                    if (tracks.isBlank()) release else release.copy(songs = tracks)
+                }
+                else -> release
+            }
+        } catch (cancelled: java.util.concurrent.CancellationException) {
+            throw cancelled
+        } catch (exception: Exception) {
+            release
+        }
+    }
+
+    private fun searchMusic(title: String, artist: String, barcode: String): SearchResult {
+        var sawResponse = false
+        var sawError = false
+        val fromMusicBrainz = mutableListOf<ScannedRelease>()
+        val fromItunes = mutableListOf<ScannedRelease>()
+        val queryUrl = musicQueryUrl(title, artist)
+        if (queryUrl != null) {
+            try {
+                fromMusicBrainz += parseSearchHits(fetch(queryUrl), barcode)
+                sawResponse = true
+            } catch (exception: Exception) {
+                sawError = true
+            }
+        }
+        val term = listOf(artist, title).filter { it.isNotBlank() }.joinToString(" ")
+        if (term.isNotBlank()) {
+            try {
+                fromItunes += parseItunesAlbums(fetch(itunesSearchUrl(term, 8)))
+                sawResponse = true
+            } catch (exception: Exception) {
+                sawError = true
+            }
+        }
+        var hits = combineMusicHits(fromMusicBrainz, fromItunes)
+        if (hits.isEmpty()) {
+            val code = barcodeCandidates(barcode).firstOrNull()
+            if (code != null && barcode.filter { it.isDigit() }.length >= 8) {
+                try {
+                    hits = parseSearchHits(fetch(searchUrl(code)), barcode)
+                    sawResponse = true
+                } catch (exception: Exception) {
+                    sawError = true
+                }
+            }
+        }
+        return finishSearch(hits, sawResponse, sawError)
+    }
+
+    private fun searchBooks(title: String, artist: String, barcode: String): SearchResult {
+        var sawResponse = false
+        var sawError = false
+        val hits = mutableListOf<ScannedRelease>()
+        if (title.isNotBlank() || artist.isNotBlank()) {
+            try {
+                hits += parseOpenLibrary(fetch(openLibraryUrl(title, artist)), barcode)
+                sawResponse = true
+            } catch (exception: Exception) {
+                sawError = true
+            }
+        }
+        val isbn = isbnCandidate(barcode)
+        if (isbn != null) {
+            try {
+                hits += parseOpenLibrary(fetch(openLibraryIsbnUrl(isbn)), barcode)
+                sawResponse = true
+            } catch (exception: Exception) {
+                sawError = true
+            }
+        }
+        if (hits.isEmpty()) {
+            try {
+                upcRelease(barcode)?.let { hits += it }
+                if (barcode.filter { it.isDigit() }.length >= 8) sawResponse = true
+            } catch (exception: Exception) {
+                sawError = true
+            }
+        }
+        return finishSearch(distinctReleases(hits), sawResponse, sawError)
+    }
+
+    private fun searchWikipedia(
+        title: String,
+        artist: String,
+        barcode: String,
+        required: String,
+    ): SearchResult {
+        var sawResponse = false
+        var sawError = false
+        val hits = mutableListOf<ScannedRelease>()
+        val query = listOf(title, artist).filter { it.isNotBlank() }.joinToString(" ")
+        if (query.isNotBlank()) {
+            try {
+                hits += parseWikipedia(fetch(wikipediaUrl("$query $required")), required)
+                sawResponse = true
+            } catch (exception: Exception) {
+                sawError = true
+            }
+        }
+        if (hits.isEmpty()) {
+            try {
+                upcRelease(barcode)?.let {
+                    hits += it
+                    sawResponse = true
+                }
+            } catch (exception: Exception) {
+                sawError = true
+            }
+        }
+        return finishSearch(distinctReleases(hits), sawResponse, sawError)
+    }
+
+    private fun upcRelease(barcode: String): ScannedRelease? {
+        val digits = barcode.filter { it.isDigit() }
+        if (digits.length < 8) return null
+        return parseUpcItem(fetch(upcUrl(digits)), barcode)
+    }
+
+    private fun finishSearch(
+        hits: List<ScannedRelease>,
+        sawResponse: Boolean,
+        sawError: Boolean,
+    ): SearchResult {
+        val usable = hits.filter { it.album.isNotBlank() || it.artist.isNotBlank() }.take(8)
+        return when {
+            usable.isNotEmpty() -> SearchResult.Hits(usable)
+            sawResponse -> SearchResult.None
+            sawError -> SearchResult.Failed("Couldn't reach the catalog.")
+            else -> SearchResult.None
+        }
+    }
+
+    private fun combineMusicHits(
+        musicBrainz: List<ScannedRelease>,
+        itunes: List<ScannedRelease>,
+    ): List<ScannedRelease> {
+        val result = musicBrainz.toMutableList()
+        for (extra in itunes) {
+            val matched = result.any { hit ->
+                titlesMatch(hit.album, extra.album) &&
+                    hit.artist.equals(extra.artist, ignoreCase = true)
+            }
+            if (matched) {
+                for (index in result.indices) {
+                    val current = result[index]
+                    if (current.coverUrl.isNotBlank() || extra.coverUrl.isBlank()) continue
+                    if (!titlesMatch(current.album, extra.album)) continue
+                    if (!current.artist.equals(extra.artist, ignoreCase = true)) continue
+                    result[index] = current.copy(coverUrl = extra.coverUrl)
+                }
+            } else if (extra.album.isNotBlank()) {
+                result.add(extra)
+            }
+        }
+        return result
+    }
+
+    private fun distinctReleases(releases: List<ScannedRelease>): List<ScannedRelease> {
+        val seen = linkedSetOf<String>()
+        return releases.filter { release ->
+            val key = normalizeTitle(release.album) + "|" +
+                release.artist.lowercase(Locale.US) + "|" + release.year
+            seen.add(key)
+        }
+    }
+
     private fun searchByTitle(seed: ScannedRelease?, barcode: String): ScannedRelease? {
         val album = cleanCommerceTitle(seed?.album.orEmpty())
         if (album.isBlank()) return null
@@ -153,6 +352,8 @@ class ReleaseLookup(
 
     companion object {
         const val USER_AGENT = "VinyLog/1.0 (com.example.vinylog)"
+        private const val OPEN_LIBRARY_FIELDS =
+            "key,title,author_name,first_publish_year,publisher,cover_i,subject"
 
         fun searchUrl(barcode: String): String {
             val query = URLEncoder.encode("barcode:$barcode", Charsets.UTF_8.name())
@@ -168,8 +369,43 @@ class ReleaseLookup(
             return "https://musicbrainz.org/ws/2/release/?query=${URLEncoder.encode(query, Charsets.UTF_8.name())}&fmt=json&limit=8"
         }
 
-        fun itunesSearchUrl(term: String): String {
-            return "https://itunes.apple.com/search?term=${URLEncoder.encode(term, Charsets.UTF_8.name())}&entity=album&limit=5"
+        fun itunesSearchUrl(term: String, limit: Int = 5): String {
+            return "https://itunes.apple.com/search?term=${URLEncoder.encode(term, Charsets.UTF_8.name())}&entity=album&limit=$limit"
+        }
+
+        fun musicQueryUrl(title: String, artist: String): String? {
+            val album = title.replace("\"", "").trim()
+            val name = artist.replace("\"", "").trim()
+            val query = when {
+                album.isNotBlank() && name.isNotBlank() -> "release:\"$album\" AND artistname:\"$name\""
+                album.isNotBlank() -> "release:\"$album\""
+                name.isNotBlank() -> "artist:\"$name\""
+                else -> return null
+            }
+            return "https://musicbrainz.org/ws/2/release/?query=${encode(query)}&fmt=json&limit=8"
+        }
+
+        fun openLibraryUrl(title: String, author: String): String {
+            return "https://openlibrary.org/search.json?title=${encode(title)}&author=${encode(author)}&limit=8&fields=$OPEN_LIBRARY_FIELDS"
+        }
+
+        fun openLibraryIsbnUrl(isbn: String): String {
+            return "https://openlibrary.org/search.json?isbn=${encode(isbn)}&limit=5&fields=$OPEN_LIBRARY_FIELDS"
+        }
+
+        fun wikipediaUrl(query: String): String {
+            return "https://en.wikipedia.org/w/api.php?action=query&generator=search" +
+                "&gsrsearch=${encode(query)}&gsrlimit=8&prop=pageimages|pageterms" +
+                "&piprop=thumbnail&pithumbsize=500&wbptterms=description&format=json&redirects=1"
+        }
+
+        fun isbnCandidate(raw: String): String? {
+            val trimmed = raw.trim().replace("-", "").replace(" ", "")
+            return when {
+                trimmed.matches(Regex("[0-9]{9}[0-9Xx]")) -> trimmed.uppercase(Locale.US)
+                trimmed.matches(Regex("[0-9]{13}")) -> trimmed
+                else -> null
+            }
         }
 
         fun itunesLookupUrl(collectionId: String): String {
@@ -229,6 +465,113 @@ class ReleaseLookup(
                 releaseToScanned(release, barcode, includeTracks = false)
             } catch (exception: Exception) {
                 null
+            }
+        }
+
+        fun parseSearchHits(json: String, barcode: String): List<ScannedRelease> {
+            return try {
+                val releases = parseObject(json)?.array("releases") ?: return emptyList()
+                releases.mapNotNull { element ->
+                    val release = element.asObject() ?: return@mapNotNull null
+                    val scanned = releaseToScanned(release, barcode, includeTracks = false) ?: return@mapNotNull null
+                    val id = release.text("id")
+                    val format = release.array("media")
+                        ?.mapNotNull { medium ->
+                            medium.asObject()?.text("format")?.takeIf { it.isNotBlank() }
+                        }
+                        ?.distinct()
+                        ?.joinToString(", ")
+                        .orEmpty()
+                    scanned.copy(
+                        catalogId = if (id.isBlank()) "" else "mb:$id",
+                        hint = listOf(format, release.text("country"))
+                            .filter { it.isNotBlank() }
+                            .joinToString(" · "),
+                    )
+                }
+            } catch (exception: Exception) {
+                emptyList()
+            }
+        }
+
+        fun parseItunesAlbums(json: String): List<ScannedRelease> {
+            return try {
+                val results = parseObject(json)?.array("results") ?: return emptyList()
+                results.mapNotNull { element ->
+                    val item = element.asObject() ?: return@mapNotNull null
+                    val name = item.text("collectionName")
+                    if (name.isBlank()) return@mapNotNull null
+                    val wrapper = item.text("wrapperType")
+                    if (wrapper.isNotBlank() && wrapper != "collection") return@mapNotNull null
+                    val id = item.primitive("collectionId")
+                    ScannedRelease(
+                        album = name,
+                        artist = item.text("artistName"),
+                        songs = "",
+                        year = yearOf(item.text("releaseDate")),
+                        genre = item.text("primaryGenreName"),
+                        barcode = "",
+                        coverUrl = item.text("artworkUrl100").replace("100x100bb", "600x600bb"),
+                        catalogId = if (id.isBlank()) "" else "itunes:$id",
+                    )
+                }
+            } catch (exception: Exception) {
+                emptyList()
+            }
+        }
+
+        fun parseOpenLibrary(json: String, barcode: String): List<ScannedRelease> {
+            return try {
+                val docs = parseObject(json)?.array("docs") ?: return emptyList()
+                docs.mapNotNull { element ->
+                    val doc = element.asObject() ?: return@mapNotNull null
+                    val title = doc.text("title")
+                    if (title.isBlank()) return@mapNotNull null
+                    val coverId = doc.primitive("cover_i")
+                    val yearDigits = doc.primitive("first_publish_year").take(4)
+                    val year = if (yearDigits.length == 4 && yearDigits.all { it.isDigit() }) yearDigits else ""
+                    ScannedRelease(
+                        album = title,
+                        artist = doc.strings("author_name").joinToString(", "),
+                        songs = "",
+                        year = year,
+                        genre = doc.strings("subject").firstOrNull().orEmpty(),
+                        barcode = barcode,
+                        coverUrl = if (coverId.isBlank()) "" else "https://covers.openlibrary.org/b/id/$coverId-L.jpg",
+                        label = doc.strings("publisher").firstOrNull().orEmpty(),
+                    )
+                }
+            } catch (exception: Exception) {
+                emptyList()
+            }
+        }
+
+        fun parseWikipedia(json: String, required: String): List<ScannedRelease> {
+            return try {
+                val pages = parseObject(json)?.get("query").asObject()?.get("pages").asObject() ?: return emptyList()
+                val hits = mutableListOf<Pair<Int, ScannedRelease>>()
+                for (entry in pages.entrySet()) {
+                    val page = entry.value.asObject() ?: continue
+                    val description = page.get("terms").asObject()?.strings("description")?.firstOrNull().orEmpty()
+                    if (!description.contains(required, ignoreCase = true)) continue
+                    val rawTitle = page.text("title")
+                    if (rawTitle.isBlank()) continue
+                    val (title, titleYear) = shortTitle(rawTitle, required)
+                    val (person, year) = personAndYear(description)
+                    hits += (page.primitive("index").toIntOrNull() ?: 999) to ScannedRelease(
+                        album = title,
+                        artist = person,
+                        songs = "",
+                        year = year.ifBlank { titleYear },
+                        genre = "",
+                        barcode = "",
+                        coverUrl = page.get("thumbnail").asObject()?.text("source").orEmpty(),
+                        hint = description,
+                    )
+                }
+                hits.sortedBy { it.first }.map { it.second }
+            } catch (exception: Exception) {
+                emptyList()
             }
         }
 
@@ -492,6 +835,42 @@ class ReleaseLookup(
 
         private fun JsonObject.array(name: String): JsonArray? {
             return get(name)?.takeIf { it.isJsonArray }?.asJsonArray
+        }
+
+        private fun JsonObject.strings(name: String): List<String> {
+            val values = array(name) ?: return emptyList()
+            return values.mapNotNull { element ->
+                if (!element.isJsonPrimitive || element.isJsonNull) null
+                else element.asString.takeIf { it.isNotBlank() }
+            }
+        }
+
+        private fun encode(value: String): String {
+            return URLEncoder.encode(value, Charsets.UTF_8.name())
+        }
+
+        private fun shortTitle(raw: String, required: String): Pair<String, String> {
+            val pattern = if (required == "film") {
+                Regex("""^(.+?) \((\d{4}) film\)$""", RegexOption.IGNORE_CASE)
+            } else {
+                Regex("""^(.+?) \((?:(\d{4}) )?video game\)$""", RegexOption.IGNORE_CASE)
+            }
+            val match = pattern.find(raw) ?: return raw to ""
+            return match.groupValues[1].trim() to match.groupValues.getOrNull(2).orEmpty()
+        }
+
+        private fun personAndYear(description: String): Pair<String, String> {
+            val patterns = listOf(
+                Regex("""(\d{4}).*directed by ([^.]+)""", RegexOption.IGNORE_CASE),
+                Regex("""(\d{4}).*film by ([^.]+)""", RegexOption.IGNORE_CASE),
+                Regex("""(\d{4}).*developed by ([^.]+)""", RegexOption.IGNORE_CASE),
+            )
+            for (pattern in patterns) {
+                val match = pattern.find(description) ?: continue
+                return match.groupValues[2].trim() to match.groupValues[1]
+            }
+            val year = Regex("""\d{4}""").find(description)?.value.orEmpty()
+            return "" to year
         }
 
         private fun JsonObject.text(name: String): String {

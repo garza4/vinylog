@@ -2,6 +2,7 @@ package com.example.vinylog.activities
 
 import android.app.Application
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -52,6 +53,8 @@ import com.example.vinylog.util.BarcodeScanner
 import com.example.vinylog.util.LookupResult
 import com.example.vinylog.util.ReleaseLookup
 import com.example.vinylog.util.ScannedRelease
+import com.example.vinylog.util.SearchResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -139,6 +142,18 @@ class AlbumView : ComponentActivity() {
                                 AlbumDetailDialog(
                                     album = selected,
                                     onDismiss = { selectedId = null },
+                                    onSave = { edited -> albumViewModel.save(edited) },
+                                    onSearch = { title, artist ->
+                                        albumViewModel.search(
+                                            mediaType = selected.mediaType.orEmpty(),
+                                            barcode = selected.barcode.orEmpty(),
+                                            title = title,
+                                            artist = artist,
+                                        )
+                                    },
+                                    onChoose = { release ->
+                                        albumViewModel.applyChoice(selected, release)
+                                    },
                                 )
                             }
                             if (albums.isEmpty()) {
@@ -206,6 +221,42 @@ class AlbumViewModel(application: Application, private val mediaType: String) : 
         scannedBarcode.value = null
     }
 
+    suspend fun save(album: Album): String? = withContext(Dispatchers.IO) {
+        try {
+            db.libraryDao().update(album)
+            null
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (exception: Exception) {
+            Log.e("AlbumView", "Could not save entry", exception)
+            "Couldn't save these details. Try again."
+        }
+    }
+
+    suspend fun search(mediaType: String, barcode: String, title: String, artist: String): SearchResult =
+        withContext(Dispatchers.IO) {
+            try {
+                ReleaseLookup().search(title, artist, mediaType, barcode)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (exception: Exception) {
+                SearchResult.Failed("Couldn't reach the catalog.")
+            }
+        }
+
+    suspend fun applyChoice(album: Album, release: ScannedRelease): String? = withContext(Dispatchers.IO) {
+        try {
+            val full = ReleaseLookup().loadChoice(release)
+            db.libraryDao().update(album.withRelease(full))
+            null
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (exception: Exception) {
+            Log.e("AlbumView", "Could not apply catalog match", exception)
+            "Couldn't save this match. Try again."
+        }
+    }
+
     fun enrichIncomplete(albums: List<Album>) {
         if (skipsCatalogLookup(mediaType)) return
         albums.filter { it.needsCatalogDetails() }.forEach { album ->
@@ -231,6 +282,34 @@ class AlbumViewModel(application: Application, private val mediaType: String) : 
 private fun Album.needsCatalogDetails(): Boolean {
     if (barcode.isNullOrBlank()) return false
     return songsOnRecord.isNullOrBlank() || yearPublished.isNullOrBlank() || coverUrl.isNullOrBlank()
+}
+
+private fun Album.withRelease(release: ScannedRelease): Album {
+    val copy = Album(
+        albumName,
+        artistName,
+        songsOnRecord,
+        yearPublished,
+        genre,
+        mediaType,
+        barcode,
+        coverUrl,
+        recordLabel,
+    )
+    copy.id = id
+    val sameWork = release.album.isBlank() ||
+        ReleaseLookup.cleanCommerceTitle(copy.albumName.orEmpty())
+            .equals(ReleaseLookup.cleanCommerceTitle(release.album), ignoreCase = true)
+    copy.applyRelease(release)
+    if (!sameWork) {
+        if (release.artist.isBlank()) copy.artistName = ""
+        if (release.songs.isBlank()) copy.songsOnRecord = ""
+        if (release.year.isBlank()) copy.yearPublished = ""
+        if (release.genre.isBlank()) copy.genre = ""
+        if (release.coverUrl.isBlank()) copy.coverUrl = ""
+        if (release.label.isBlank()) copy.recordLabel = ""
+    }
+    return copy
 }
 
 private fun Album.applyRelease(release: ScannedRelease): Album {
